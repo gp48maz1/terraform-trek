@@ -1,0 +1,16 @@
+graph TD
+    Magnetosphere["Magnetosphere"]
+    Atmosphere["Atmosphere"]
+    Temperature["Temperature"]
+    Water["Water"]
+    Climate["Climate"]
+    Soil["Soil"]
+    Oxygen["Oxygen"]
+
+    Magnetosphere --> Atmosphere
+    Atmosphere --> Temperature
+    Temperature --> Water
+    Water --> Climate
+    Climate --> Soil
+    Soil --> Oxygen
+    Oxygen --> Atmosphere
