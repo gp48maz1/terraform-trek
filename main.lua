@@ -1,8 +1,11 @@
 local Deck = require('deck')
+local TerraformingTarget = require('terraforming_target')
+local DrawHelpers = require('draw_helpers')
 
 local player_deck
 local max_energy = 3
 local current_energy = 0
+local target
 
 -- Helper functions for energy management
 local function reset_energy()
@@ -27,6 +30,9 @@ function love.load()
   player_deck = Deck:new()
   player_deck:create_starter_deck() -- Creates and shuffles
   
+  -- Create the target
+  target = TerraformingTarget:new()
+  
   -- Start the first turn
   reset_energy() 
   player_deck:draw(5) -- Draw initial hand
@@ -34,19 +40,13 @@ function love.load()
   print("Game Loaded. Initial Hand Drawn. Energy set.")
 end
 
-function love.draw()
-  -- Display Energy
-  love.graphics.print("Energy: " .. current_energy .. " / " .. max_energy, 10, 10)
-  
-  -- Display Draw Pile and Discard Pile counts
-  love.graphics.print("Draw Pile: " .. #player_deck.draw_pile, 10, 30)
-  love.graphics.print("Discard Pile: " .. #player_deck.discard_pile, 10, 50)
-  
-  -- Display Hand
+-- Function to draw the player's hand
+local function draw_hand()
   love.graphics.print("Hand:", 10, 400) -- Keep label on left
   local hand = player_deck.hand
   local num_cards = #hand
   local card_width = 150 -- Assuming width from card.lua
+  local card_height = 225 -- Assuming height from card.lua
   local card_spacing = 175 -- Increased spacing to prevent overlap (was 160)
   
   -- Calculate total width and starting position for centering
@@ -56,71 +56,46 @@ function love.draw()
   end
   local start_x = (love.graphics.getWidth() - total_hand_width) / 2
   
-  -- Draw the cards centered and fanned out
+  -- Constants for drawing
   local max_angle_degrees = 10 -- Max rotation for outer cards
-  local card_height = 225 -- Assuming height from card.lua
-  
+  local pixel_offset_per_step = 20 -- Increased from 2
+  local base_y = 420
+
   for i, card in ipairs(hand) do
     local card_x = start_x + (i-1) * card_spacing
-    local card_y = 420 -- Reset to constant base Y
     
-    -- Calculate rotation based on position in hand
-    local center_index = (num_cards + 1) / 2
-    local offset_factor = 0
-    if num_cards > 1 then
-      offset_factor = (i - center_index) / (num_cards / 2)
-    end
-    local angle_rad = offset_factor * math.rad(max_angle_degrees)
+    -- Calculate properties using helper functions
+    local angle_rad = DrawHelpers.calculate_card_angle(i, num_cards, max_angle_degrees)
+    local dy = DrawHelpers.calculate_vertical_offset(i, num_cards, pixel_offset_per_step)
     
-    -- Calculate stepped vertical offset based on distance from center
-    local dy = 0
-    local pixel_offset_per_step = 20 -- Increased from 2
-    if num_cards > 1 then
-      if num_cards % 2 == 1 then -- Odd number of cards
-        local center_idx = (num_cards + 1) / 2
-        local steps = math.abs(i - center_idx)
-        if steps == 0 then
-          dy = 10 -- Specific offset for the middle card
-        else
-          dy = steps * pixel_offset_per_step
-        end
-      else -- Even number of cards
-        local center1_idx = num_cards / 2
-        local center2_idx = center1_idx + 1
-        local steps = 0
-        if i <= center1_idx then
-          steps = center1_idx - i
-        else -- i >= center2_idx
-          steps = i - center2_idx
-        end
-        dy = steps * pixel_offset_per_step
-      end
-    end
-
-    -- Define rotation origin (center)
-    local card_ox = card_width / 2
-    local card_oy = card_height / 2
-    
-    -- Apply transformations
-    love.graphics.push()
-    -- 1. Translate to card's base position + arc offset (reverted)
-    love.graphics.translate(card_x, card_y + dy) 
-    -- 2. Translate to rotation origin (center of the card)
-    love.graphics.translate(card_ox, card_oy)
-    -- 3. Rotate
-    love.graphics.rotate(angle_rad)
-    -- 4. Translate back from rotation origin
-    love.graphics.translate(-card_ox, -card_oy) 
-    -- 5. Draw the card itself at (0,0)
-    card:draw(0, 0)
-    -- 6. Restore previous transformations
-    love.graphics.pop()
+    -- Draw the card using the helper function
+    DrawHelpers.draw_transformed_card(card, card_x, base_y, dy, angle_rad, card_width, card_height)
     
     -- Draw index number above card's original (unrotated) top-center position for simplicity
     local number_x = card_x + card_width / 2 - 5 -- Adjust slightly for number width
-    local number_y = card_y + dy - 15 -- Position above the card, considering the reverted drop
+    local number_y = base_y + dy - 15 -- Position above the card, considering the offset
     love.graphics.print(i, number_x, number_y) 
   end
+end
+
+-- Add the update function to handle time-based changes
+function love.update(dt)
+  target:update(dt) -- Update the terraforming target (for spinning, etc.)
+end
+
+function love.draw()
+  -- Display Energy
+  love.graphics.print("Energy: " .. current_energy .. " / " .. max_energy, 10, 10)
+  
+  -- Draw the target planet
+  target:draw()
+  
+  -- Display Draw Pile and Discard Pile counts
+  love.graphics.print("Draw Pile: " .. #player_deck.draw_pile, 10, 30)
+  love.graphics.print("Discard Pile: " .. #player_deck.discard_pile, 10, 50)
+  
+  -- Display Hand (using the new function)
+  draw_hand()
 end
 
 function love.keypressed(key)
