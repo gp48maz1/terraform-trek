@@ -1,11 +1,14 @@
 local Deck = require('deck')
 local TerraformingTarget = require('terraforming_target')
 local DrawHelpers = require('draw_helpers')
+local RelationshipsView = require('planetary_system_relationships') -- Require the new module
 
 local player_deck
 local max_energy = 3
 local current_energy = 0
 local target
+
+local gameState = 'gameplay' -- Initial game state
 
 -- Helper functions for energy management
 local function reset_energy()
@@ -80,53 +83,84 @@ end
 
 -- Add the update function to handle time-based changes
 function love.update(dt)
-  target:update(dt) -- Update the terraforming target (for spinning, etc.)
+  if gameState == 'gameplay' then
+    target:update(dt) -- Update the terraforming target (for spinning, etc.)
+    -- Add other gameplay-specific updates here if needed
+  elseif gameState == 'relationships' then
+    -- No updates needed for the static relationship view (yet)
+  end
 end
 
 function love.draw()
-  -- Display Energy
-  love.graphics.print("Energy: " .. current_energy .. " / " .. max_energy, 10, 10)
-  
-  -- Draw the target planet
-  target:draw()
-  
-  -- Display Draw Pile and Discard Pile counts
-  love.graphics.print("Draw Pile: " .. #player_deck.draw_pile, 10, 30)
-  love.graphics.print("Discard Pile: " .. #player_deck.discard_pile, 10, 50)
-  
-  -- Display Hand (using the new function)
-  draw_hand()
+  if gameState == 'gameplay' then
+    -- Display Energy
+    love.graphics.print("Energy: " .. current_energy .. " / " .. max_energy, 10, 10)
+
+    -- Draw the target planet
+    target:draw()
+
+    -- Display Draw Pile and Discard Pile counts
+    love.graphics.print("Draw Pile: " .. #player_deck.draw_pile, 10, 30)
+    love.graphics.print("Discard Pile: " .. #player_deck.discard_pile, 10, 50)
+
+    -- Display Hand (using the new function)
+    draw_hand()
+
+    -- Instructions to switch view
+    love.graphics.print("Press 'v' to view System Relationships", 10, love.graphics.getHeight() - 20)
+
+  elseif gameState == 'relationships' then
+    RelationshipsView.draw() -- Call the draw function from the relationships module
+    love.graphics.print("Press 'v' to return to Game", 10, love.graphics.getHeight() - 20)
+  end
 end
 
 function love.keypressed(key)
-  -- Try to play card corresponding to number keys 1-9
-  local num = tonumber(key)
-  if num and num >= 1 and num <= 9 then
-    local card_index = num
-    if card_index <= #player_deck.hand then
-      local card_to_play = player_deck.hand[card_index] -- Get card to check cost
-      local cost = card_to_play.cost or 0
-      
-      if can_afford(cost) then
-        local played_card = player_deck:play_card(card_index, current_energy)
-        if played_card then
-          spend_energy(played_card.cost) -- Use cost from the actually played card
+  -- State switching key
+  if key == 'v' then
+    if gameState == 'gameplay' then
+      gameState = 'relationships'
+      print("Switched to Relationships View")
+    elseif gameState == 'relationships' then
+      gameState = 'gameplay'
+      print("Switched to Gameplay View")
+    end
+    return -- Don't process other keys if we just switched state
+  end
+
+  -- Gameplay specific key handling
+  if gameState == 'gameplay' then
+    -- Try to play card corresponding to number keys 1-9
+    local num = tonumber(key)
+    if num and num >= 1 and num <= 9 then
+      local card_index = num
+      if card_index <= #player_deck.hand then
+        local card_to_play = player_deck.hand[card_index] -- Get card to check cost
+        local cost = card_to_play.cost or 0
+        
+        if can_afford(cost) then
+          local played_card = player_deck:play_card(card_index, current_energy)
+          if played_card then
+            spend_energy(played_card.cost) -- Use cost from the actually played card
+          end
+        else
+          print("Cannot afford card " .. card_index .. " (" .. card_to_play.name .. ")")
         end
       else
-        print("Cannot afford card " .. card_index .. " (" .. card_to_play.name .. ")")
+        print("Invalid hand index: " .. card_index)
       end
-    else
-      print("Invalid hand index: " .. card_index)
+    end
+    
+    -- Manual energy reset for testing
+    if key == 'r' then
+      reset_energy()
+    end
+
+    -- Manual draw for testing
+    if key == 'd' then
+      player_deck:draw(1)
     end
   end
   
-  -- Manual energy reset for testing
-  if key == 'r' then
-    reset_energy()
-  end
-
-  -- Manual draw for testing
-  if key == 'd' then
-    player_deck:draw(1)
-  end
+  -- Add key handling for other states here if needed
 end

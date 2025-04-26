@@ -13,10 +13,10 @@ function TerraformingTarget:new(o)
   
   -- Properties for spinning effect
   o.spin_angle = 0 -- Base start angle in radians
-  o.spin_speed = -0.3 -- Radians per second (Slower and reversed)
+  o.spin_speed = -0.3 -- Radians per second (Doubled speed and reversed)
   o.spin_dot_color = {0.1, 0.1, 0.1} -- Very dark gray dot color (was shade)
   o.spin_dot_shade_color = {0.3, 0.3, 0.3} -- Lighter dark gray for shading (was main color)
-  o.num_spin_steps = 16 -- Number of discrete steps for the spin animation
+  o.num_spin_steps = 24 -- Increased steps for smoother animation at current speed
 
   -- Define properties for multiple dots
   local num_dots = 12 -- Increase number of dots
