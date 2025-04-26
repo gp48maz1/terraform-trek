@@ -87,7 +87,7 @@ function love.update(dt)
     target:update(dt) -- Update the terraforming target (for spinning, etc.)
     -- Add other gameplay-specific updates here if needed
   elseif gameState == 'relationships' then
-    -- No updates needed for the static relationship view (yet)
+    RelationshipsView:update(dt) -- Call the relationships view update function
   end
 end
 

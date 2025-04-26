@@ -2,12 +2,18 @@
 
 local RelationshipsView = {}
 
+-- Pulse state
+RelationshipsView.pulse_progress = 0
+RelationshipsView.pulse_speed = 0.2 -- Controls speed (lower is slower, 1.0 = 1 cycle/sec)
+
 -- Define colors
 local black_color = {0.1, 0.1, 0.1, 1}
 local blue_color = {0.2, 0.2, 0.8, 1}
 local gray_color = {0.2, 0.2, 0.2, 1} -- For text and general lines
+local light_black_color = {0.6, 0.6, 0.6, 0.5} -- Lighter gray, semi-transparent
+local light_blue_color = {0.6, 0.6, 1.0, 0.5} -- Lighter blue, semi-transparent
 
--- Helper function to draw a labeled box
+-- Helper function to draw a labeled box (node)
 local function draw_node(label, x, y, w, h)
     local padding = 5
     love.graphics.setColor(0.8, 0.8, 0.8, 1) -- Light gray box
@@ -99,42 +105,95 @@ local function get_rect_line_intersection(cx1, cy1, cx2, cy2, rect_x, rect_y, re
     return ix, iy
 end
 
+
 -- Helper function to draw an arrow between node boundaries
--- Handles color and single/double headed arrows
-local function draw_arrow(node1, node2, node_w, node_h, color, is_double)
+-- Handles color, single/double headed arrows, and MATERIALIZING line effect
+local function draw_arrow(node1, node2, node_w, node_h, color, is_double, pulse_progress)
     local cx1, cy1 = node1.x + node_w / 2, node1.y + node_h / 2
     local cx2, cy2 = node2.x + node_w / 2, node2.y + node_h / 2
 
-    -- Calculate start and end points on the boundaries
-    local start_x, start_y = get_rect_line_intersection(cx2, cy2, cx1, cy1, node1.x, node1.y, node_w, node_h)
-    local end_x, end_y = get_rect_line_intersection(cx1, cy1, cx2, cy2, node2.x, node2.y, node_w, node_h)
+    -- Calculate FINAL start and end points on the boundaries
+    local final_start_x, final_start_y = get_rect_line_intersection(cx2, cy2, cx1, cy1, node1.x, node1.y, node_w, node_h)
+    local final_end_x, final_end_y = get_rect_line_intersection(cx1, cy1, cx2, cy2, node2.x, node2.y, node_w, node_h)
 
-    love.graphics.setColor(unpack(color or gray_color)) -- Use provided color or default gray
+    -- Determine the lighter background color
+    local light_color = gray_color -- Default fallback
+    if color == black_color then
+        light_color = light_black_color
+    elseif color == blue_color then
+        light_color = light_blue_color
+    end
+
+    -- 1. Draw the faint background line first
+    love.graphics.setColor(unpack(light_color))
     love.graphics.setLineWidth(2)
-    love.graphics.line(start_x, start_y, end_x, end_y)
+    love.graphics.line(final_start_x, final_start_y, final_end_x, final_end_y)
+
+    -- Calculate line vector
+    local dx = final_end_x - final_start_x
+    local dy = final_end_y - final_start_y
+
+    -- Calculate CURRENT line segment points based on pulse
+    local current_start_x = final_start_x
+    local current_start_y = final_start_y
+    local current_end_x = final_end_x
+    local current_end_y = final_end_y
+
+    if not is_double then
+        -- One-way: Line grows from start to end
+        current_end_x = final_start_x + dx * pulse_progress
+        current_end_y = final_start_y + dy * pulse_progress
+    else
+        -- Two-way: Line grows start -> end (0 to 0.5), then shrinks end -> start (0.5 to 1)
+        if pulse_progress < 0.5 then
+            local progress = pulse_progress * 2 -- Scale 0-0.5 to 0-1
+            current_end_x = final_start_x + dx * progress
+            current_end_y = final_start_y + dy * progress
+        else
+            local progress = (pulse_progress - 0.5) * 2 -- Scale 0.5-1 to 0-1
+            -- Start the line segment from the position corresponding to the return pulse
+            current_start_x = final_start_x + dx * (1.0 - progress) 
+            current_start_y = final_start_y + dy * (1.0 - progress)
+            current_end_x = final_end_x -- Line always goes to the actual end point in this phase
+            current_end_y = final_end_y
+            -- Alternative: Draw from start to the receding point?
+            -- current_end_x = final_start_x + dx * (1.0 - progress)
+            -- current_end_y = final_start_y + dy * (1.0 - progress)
+            -- Let's stick to the first interpretation (grow out, shrink back by moving start point)
+        end
+    end
     
-    -- Draw arrowhead at the end_x, end_y point
-    local angle = math.atan2(end_y - start_y, end_x - start_x) -- Use angle of the final line segment
+    -- 2. Draw the current (materializing) line segment on top
+    love.graphics.setColor(unpack(color or gray_color))
+    love.graphics.setLineWidth(2)
+    -- Check if start and end are practically the same to avoid drawing a zero-length line
+    if math.abs(current_end_x - current_start_x) > 0.1 or math.abs(current_end_y - current_start_y) > 0.1 then
+        love.graphics.line(current_start_x, current_start_y, current_end_x, current_end_y)
+    end
+
+    -- Draw FINAL arrowheads (always visible for context)
+    local angle = math.atan2(final_end_y - final_start_y, final_end_x - final_start_x)
     local arrow_len = 10
     local arrow_angle = math.pi / 6 -- 30 degrees
 
-    local ax1 = end_x - arrow_len * math.cos(angle - arrow_angle)
-    local ay1 = end_y - arrow_len * math.sin(angle - arrow_angle)
-    local ax2 = end_x - arrow_len * math.cos(angle + arrow_angle)
-    local ay2 = end_y - arrow_len * math.sin(angle + arrow_angle)
-    love.graphics.line(end_x, end_y, ax1, ay1)
-    love.graphics.line(end_x, end_y, ax2, ay2)
+    local ax1 = final_end_x - arrow_len * math.cos(angle - arrow_angle)
+    local ay1 = final_end_y - arrow_len * math.sin(angle - arrow_angle)
+    local ax2 = final_end_x - arrow_len * math.cos(angle + arrow_angle)
+    local ay2 = final_end_y - arrow_len * math.sin(angle + arrow_angle)
+    love.graphics.line(final_end_x, final_end_y, ax1, ay1)
+    love.graphics.line(final_end_x, final_end_y, ax2, ay2)
 
-    -- Draw second arrowhead at start_x, start_y if double
     if is_double then
-        local back_angle = math.atan2(start_y - end_y, start_x - end_x) -- Angle from end to start
-        local bax1 = start_x - arrow_len * math.cos(back_angle - arrow_angle)
-        local bay1 = start_y - arrow_len * math.sin(back_angle - arrow_angle)
-        local bax2 = start_x - arrow_len * math.cos(back_angle + arrow_angle)
-        local bay2 = start_y - arrow_len * math.sin(back_angle + arrow_angle)
-        love.graphics.line(start_x, start_y, bax1, bay1)
-        love.graphics.line(start_x, start_y, bax2, bay2)
+        local back_angle = math.atan2(final_start_y - final_end_y, final_start_x - final_end_x)
+        local bax1 = final_start_x - arrow_len * math.cos(back_angle - arrow_angle)
+        local bay1 = final_start_y - arrow_len * math.sin(back_angle - arrow_angle)
+        local bax2 = final_start_x - arrow_len * math.cos(back_angle + arrow_angle)
+        local bay2 = final_start_y - arrow_len * math.sin(back_angle + arrow_angle)
+        love.graphics.line(final_start_x, final_start_y, bax1, bay1)
+        love.graphics.line(final_start_x, final_start_y, bax2, bay2)
     end
+    
+    -- No pulse dot needed anymore
 
     love.graphics.setLineWidth(1)
     love.graphics.setColor(unpack(gray_color)) -- Reset color
@@ -234,9 +293,9 @@ function RelationshipsView.draw()
     -- Define node positions relative to their groups
     local nodes = {
         -- Planetary Conditions Group
-        Solar_Strength = {x = group_conditions_x + group_padding, y = group_conditions_y + group_padding + (node_h + node_spacing_y) * 2, label = "Solar Strength"},
-        Magnetosphere  = {x = group_conditions_x + group_padding, y = group_conditions_y + group_padding + node_h + node_spacing_y, label = "Magnetosphere"},
-        Tectonics      = {x = group_conditions_x + group_padding, y = group_conditions_y + group_padding, label = "Tectonic Activity"},
+        Solar_Strength = {x = group_conditions_x + group_padding, y = group_conditions_y + group_padding + (node_h + node_spacing_y) * 2, label = "Solar Strength"}, -- Moved down
+        Magnetosphere  = {x = group_conditions_x + group_padding, y = group_conditions_y + group_padding + node_h + node_spacing_y, label = "Magnetosphere"}, -- Stays in middle
+        Tectonics      = {x = group_conditions_x + group_padding, y = group_conditions_y + group_padding, label = "Tectonic Activity"}, -- Moved up
         
         -- Physical Systems Group
         Lithosphere    = {x = group_physical_x + group_padding, y = group_physical_y + group_padding, label = "Lithosphere"},
@@ -258,20 +317,20 @@ function RelationshipsView.draw()
     end
 
     -- Define connections based on the Mermaid chart
-    -- Pass node tables, dimensions, COLOR, and is_double flag to arrow function
+    -- Pass node tables, dimensions, COLOR, is_double, and PULSE_PROGRESS flag to arrow function
     
     -- One-way (Black)
-    draw_arrow(nodes.Solar_Strength, nodes.Atmosphere, node_w, node_h, black_color, false)
-    draw_arrow(nodes.Solar_Strength, nodes.Hydrosphere, node_w, node_h, black_color, false)
-    draw_arrow(nodes.Magnetosphere, nodes.Atmosphere, node_w, node_h, black_color, false)
-    draw_arrow(nodes.Tectonics, nodes.Lithosphere, node_w, node_h, black_color, false)
-    draw_arrow(nodes.Lithosphere, nodes.Atmosphere, node_w, node_h, black_color, false)
+    draw_arrow(nodes.Solar_Strength, nodes.Atmosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress)
+    draw_arrow(nodes.Solar_Strength, nodes.Hydrosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress)
+    draw_arrow(nodes.Magnetosphere, nodes.Atmosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress)
+    draw_arrow(nodes.Tectonics, nodes.Lithosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress)
+    draw_arrow(nodes.Lithosphere, nodes.Atmosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress)
 
     -- Bidirectional / Mutual (Blue)
-    draw_arrow(nodes.Lithosphere, nodes.Biosphere, node_w, node_h, blue_color, true)
-    draw_arrow(nodes.Atmosphere, nodes.Biosphere, node_w, node_h, blue_color, true)
-    draw_arrow(nodes.Atmosphere, nodes.Hydrosphere, node_w, node_h, blue_color, true)
-    draw_arrow(nodes.Hydrosphere, nodes.Biosphere, node_w, node_h, blue_color, true)
+    draw_arrow(nodes.Lithosphere, nodes.Biosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress)
+    draw_arrow(nodes.Atmosphere, nodes.Biosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress)
+    draw_arrow(nodes.Atmosphere, nodes.Hydrosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress)
+    draw_arrow(nodes.Hydrosphere, nodes.Biosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress)
     
     -- Draw the Key Box (drawn last to be on top)
     local key_w = 200
@@ -279,6 +338,12 @@ function RelationshipsView.draw()
     local key_x = width - key_w - 20 -- Position bottom right
     local key_y = height - key_h - 40 -- Adjust up slightly from bottom edge
     draw_key_box(key_x, key_y, key_w, key_h)
+end
+
+-- Update function for the pulse animation
+function RelationshipsView:update(dt)
+    -- Increment progress, wrapping around using modulo
+    self.pulse_progress = (self.pulse_progress + dt * self.pulse_speed) % 1
 end
 
 return RelationshipsView
