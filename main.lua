@@ -2,11 +2,19 @@ local Deck = require('deck')
 local TerraformingTarget = require('terraforming_target')
 local DrawHelpers = require('draw_helpers')
 local RelationshipsView = require('planetary_system_relationships') -- Require the new module
+local PlanetarySystem = require('planetary_system_of_equations') -- Require the system module
 
 local player_deck
 local max_energy = 3
 local current_energy = 0
 local target
+
+-- Create a sample planetary system instance for the relationship view
+-- In a real game, you would pass the actual system instance you want to inspect
+local relationship_system_instance = PlanetarySystem.new(
+    {S = 1.0, M = 1.0, T = 1.0, L = 0.8, A = 1.1, H = 0.9, B = 1.2}, 
+    {alpha1 = 0.1, alpha2 = 0.05, beta1 = 0.03} -- Example with some custom coeffs
+)
 
 local gameState = 'gameplay' -- Initial game state
 
@@ -110,7 +118,7 @@ function love.draw()
     love.graphics.print("Press 'v' to view System Relationships", 10, love.graphics.getHeight() - 20)
 
   elseif gameState == 'relationships' then
-    RelationshipsView.draw() -- Call the draw function from the relationships module
+    RelationshipsView.draw(relationship_system_instance) -- Pass the system instance
     love.graphics.print("Press 'v' to return to Game", 10, love.graphics.getHeight() - 20)
   end
 end

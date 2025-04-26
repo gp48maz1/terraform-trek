@@ -13,14 +13,52 @@ local gray_color = {0.2, 0.2, 0.2, 1} -- For text and general lines
 local light_black_color = {0.6, 0.6, 0.6, 0.5} -- Lighter gray, semi-transparent
 local light_blue_color = {0.6, 0.6, 1.0, 0.5} -- Lighter blue, semi-transparent
 
+-- Map node labels to system instance keys (for values)
+local node_value_keys = {
+    ["Solar Strength"] = "S",
+    ["Magnetosphere"] = "M",
+    ["Tectonic Activity"] = "T",
+    ["Lithosphere"] = "L",
+    ["Atmosphere"] = "A",
+    ["Hydrosphere"] = "H",
+    ["Biosphere"] = "B"
+}
+
+-- Map connections (node1.label -> node2.label) to coefficient VARIABLE NAMES
+-- This map defines the influence FROM node1 TO node2
+local coefficient_var_map = {
+    ["Solar Strength"]    = { Atmosphere = "alpha1", Hydrosphere = "gamma1" },
+    ["Magnetosphere"]     = { Atmosphere = "alpha2" },
+    ["Tectonic Activity"] = { Lithosphere = "epsilon1" },
+    ["Lithosphere"]       = { Atmosphere = "alpha3", Hydrosphere = "gamma2", Biosphere = "eta3" }, -- L influences B via eta3
+    ["Atmosphere"]        = { Hydrosphere = "delta1", Biosphere = "eta1" },   -- A influences H, B
+    ["Hydrosphere"]       = { Atmosphere = "beta2", Biosphere = "eta2" },    -- H influences A, B
+    ["Biosphere"]         = { Atmosphere = "beta1", Lithosphere = "zeta1" },     -- B influences A, L
+}
+
 -- Helper function to draw a labeled box (node)
-local function draw_node(label, x, y, w, h)
+local function draw_node(label, x, y, w, h, system_instance)
     local padding = 5
     love.graphics.setColor(0.8, 0.8, 0.8, 1) -- Light gray box
     love.graphics.rectangle("fill", x, y, w, h, 5, 5) -- Rounded corners
     love.graphics.setColor(0.1, 0.1, 0.1, 1) -- Dark text
     love.graphics.rectangle("line", x, y, w, h, 5, 5)
+
+    -- Draw Label
     love.graphics.printf(label, x + padding, y + padding, w - 2 * padding, "center")
+    
+    -- Draw Value if system_instance is provided
+    if system_instance then
+        local value_key = node_value_keys[label]
+        if value_key then
+            local value = system_instance[value_key]
+            if value then 
+                local value_str = string.format("%.2f", value)
+                 love.graphics.setColor(0.3, 0.3, 0.3, 1) -- Slightly lighter text for value
+                 love.graphics.printf(value_str, x + padding, y + h - padding - 12, w - 2 * padding, "center")
+            end
+        end
+    end
 end
 
 -- Helper function to draw a labeled container box for groups
@@ -108,7 +146,7 @@ end
 
 -- Helper function to draw an arrow between node boundaries
 -- Handles color, single/double headed arrows, and MATERIALIZING line effect
-local function draw_arrow(node1, node2, node_w, node_h, color, is_double, pulse_progress)
+local function draw_arrow(node1, node2, node_w, node_h, color, is_double, pulse_progress, system_instance)
     local cx1, cy1 = node1.x + node_w / 2, node1.y + node_h / 2
     local cx2, cy2 = node2.x + node_w / 2, node2.y + node_h / 2
 
@@ -172,6 +210,8 @@ local function draw_arrow(node1, node2, node_w, node_h, color, is_double, pulse_
     end
 
     -- Draw FINAL arrowheads (always visible for context)
+    love.graphics.setColor(unpack(color or gray_color)) -- Ensure color is set before drawing heads
+    love.graphics.setLineWidth(2)
     local angle = math.atan2(final_end_y - final_start_y, final_end_x - final_start_x)
     local arrow_len = 10
     local arrow_angle = math.pi / 6 -- 30 degrees
@@ -193,7 +233,56 @@ local function draw_arrow(node1, node2, node_w, node_h, color, is_double, pulse_
         love.graphics.line(final_start_x, final_start_y, bax2, bay2)
     end
     
-    -- No pulse dot needed anymore
+    -- Draw coefficient value(s) near the arrow
+    if system_instance and system_instance.coeffs then
+        local coeff1_var = nil -- Coefficient for node1 -> node2 influence
+        local coeff2_var = nil -- Coefficient for node2 -> node1 influence (only for double arrows)
+
+        -- Find coefficient variable names based on connection labels
+        if coefficient_var_map[node1.label] and coefficient_var_map[node1.label][node2.label] then
+             coeff1_var = coefficient_var_map[node1.label][node2.label]
+        end
+        if is_double then
+            if coefficient_var_map[node2.label] and coefficient_var_map[node2.label][node1.label] then
+                 coeff2_var = coefficient_var_map[node2.label][node1.label]
+            end
+        end
+        
+        local coeff1_value = coeff1_var and system_instance.coeffs[coeff1_var]
+        local coeff2_value = coeff2_var and system_instance.coeffs[coeff2_var]
+        
+        -- Only proceed if we found at least one valid coefficient name and value
+        if coeff1_value or coeff2_value then 
+            -- Calculate position near the middle of the line
+            local mid_x = (final_start_x + final_end_x) / 2
+            local mid_y = (final_start_y + final_end_y) / 2
+            
+            -- Offset perpendicular to the line
+            local line_dx = final_end_x - final_start_x
+            local line_dy = final_end_y - final_start_y
+            local length = math.sqrt(line_dx*line_dx + line_dy*line_dy)
+            local offset_dist = 15
+            local offset_x = -line_dy / length * offset_dist
+            local offset_y = line_dx / length * offset_dist
+            
+            local text_x = mid_x + offset_x
+            local text_y = mid_y + offset_y
+
+            local coeff_text = ""
+            if coeff1_value then 
+                coeff_text = coeff1_var .. ": " .. string.format("%.2f", coeff1_value) -- Use variable name
+            end
+            -- If it's a double arrow and we have the reverse coefficient, add it on a new line
+            if is_double and coeff2_value then
+                 coeff_text = coeff_text .. (coeff_text ~= "" and "\n" or "") .. coeff2_var .. ": " .. string.format("%.2f", coeff2_value) -- Use variable name
+            end
+
+            if coeff_text ~= "" then
+                love.graphics.setColor(0.1, 0.1, 0.1, 1) -- Dark text color for coefficients
+                love.graphics.print(coeff_text, text_x - 15, text_y - 10) -- Adjust offset slightly for text width/height
+            end
+        end
+    end
 
     love.graphics.setLineWidth(1)
     love.graphics.setColor(unpack(gray_color)) -- Reset color
@@ -261,7 +350,7 @@ local function draw_key_box(x, y, w, h)
 end
 
 -- Main draw function for this view
-function RelationshipsView.draw()
+function RelationshipsView.draw(system_instance)
     local width = love.graphics.getWidth()
     local height = love.graphics.getHeight()
 
@@ -313,24 +402,24 @@ function RelationshipsView.draw()
 
     -- Draw nodes
     for _, node in pairs(nodes) do
-        draw_node(node.label, node.x, node.y, node_w, node_h)
+        draw_node(node.label, node.x, node.y, node_w, node_h, system_instance)
     end
 
     -- Define connections based on the Mermaid chart
-    -- Pass node tables, dimensions, COLOR, is_double, and PULSE_PROGRESS flag to arrow function
+    -- Pass node tables, dimensions, COLOR, is_double, pulse_progress, AND system_instance to arrow function
     
     -- One-way (Black)
-    draw_arrow(nodes.Solar_Strength, nodes.Atmosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress)
-    draw_arrow(nodes.Solar_Strength, nodes.Hydrosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress)
-    draw_arrow(nodes.Magnetosphere, nodes.Atmosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress)
-    draw_arrow(nodes.Tectonics, nodes.Lithosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress)
-    draw_arrow(nodes.Lithosphere, nodes.Atmosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress)
+    draw_arrow(nodes.Solar_Strength, nodes.Atmosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress, system_instance)
+    draw_arrow(nodes.Solar_Strength, nodes.Hydrosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress, system_instance)
+    draw_arrow(nodes.Magnetosphere, nodes.Atmosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress, system_instance)
+    draw_arrow(nodes.Tectonics, nodes.Lithosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress, system_instance)
+    draw_arrow(nodes.Lithosphere, nodes.Atmosphere, node_w, node_h, black_color, false, RelationshipsView.pulse_progress, system_instance)
 
     -- Bidirectional / Mutual (Blue)
-    draw_arrow(nodes.Lithosphere, nodes.Biosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress)
-    draw_arrow(nodes.Atmosphere, nodes.Biosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress)
-    draw_arrow(nodes.Atmosphere, nodes.Hydrosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress)
-    draw_arrow(nodes.Hydrosphere, nodes.Biosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress)
+    draw_arrow(nodes.Lithosphere, nodes.Biosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress, system_instance)
+    draw_arrow(nodes.Atmosphere, nodes.Biosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress, system_instance)
+    draw_arrow(nodes.Atmosphere, nodes.Hydrosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress, system_instance)
+    draw_arrow(nodes.Hydrosphere, nodes.Biosphere, node_w, node_h, blue_color, true, RelationshipsView.pulse_progress, system_instance)
     
     -- Draw the Key Box (drawn last to be on top)
     local key_w = 200
