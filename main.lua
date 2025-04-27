@@ -8,6 +8,7 @@ local player_deck
 local max_energy = 3
 local current_energy = 0
 local target
+local hovered_card_index = nil
 
 -- Create a sample planetary system instance for the relationship view
 -- In a real game, you would pass the actual system instance you want to inspect
@@ -53,12 +54,13 @@ end
 
 -- Function to draw the player's hand
 local function draw_hand()
-  love.graphics.print("Hand:", 10, 400) -- Keep label on left
+  -- Use the globally tracked hovered_card_index
+  -- love.graphics.print("Hand:", 10, 400) -- Keep label on left (Keep or remove as desired)
   local hand = player_deck.hand
   local num_cards = #hand
-  local card_width = 150 -- Assuming width from card.lua
-  local card_height = 225 -- Assuming height from card.lua
-  local card_spacing = 175 -- Increased spacing to prevent overlap (was 160)
+  local card_width = 150 
+  local card_height = 225
+  local card_spacing = 175 
   
   -- Calculate total width and starting position for centering
   local total_hand_width = 0
@@ -68,31 +70,111 @@ local function draw_hand()
   local start_x = (love.graphics.getWidth() - total_hand_width) / 2
   
   -- Constants for drawing
-  local max_angle_degrees = 10 -- Max rotation for outer cards
-  local pixel_offset_per_step = 20 -- Increased from 2
+  local max_angle_degrees = 10 
+  local pixel_offset_per_step = 20 
   local base_y = 420
 
+  -- 1. Draw non-hovered cards first
   for i, card in ipairs(hand) do
+    if i ~= hovered_card_index then -- Only draw if NOT hovered
+      local card_x = start_x + (i-1) * card_spacing
+      local angle_rad = DrawHelpers.calculate_card_angle(i, num_cards, max_angle_degrees)
+      local dy = DrawHelpers.calculate_vertical_offset(i, num_cards, pixel_offset_per_step)
+      
+      DrawHelpers.draw_transformed_card(card, card_x, base_y, dy, angle_rad, card_width, card_height)
+      
+      -- Draw index number 
+      local number_x = card_x + card_width / 2 - 5 
+      local number_y = base_y + dy - 15 
+      love.graphics.print(i, number_x, number_y) 
+    end
+  end
+
+  -- 2. Draw the hovered card last (if any)
+  if hovered_card_index then
+    local i = hovered_card_index
+    local card = hand[i]
     local card_x = start_x + (i-1) * card_spacing
     
-    -- Calculate properties using helper functions
+    -- Original transformation values
     local angle_rad = DrawHelpers.calculate_card_angle(i, num_cards, max_angle_degrees)
     local dy = DrawHelpers.calculate_vertical_offset(i, num_cards, pixel_offset_per_step)
     
-    -- Draw the card using the helper function
-    DrawHelpers.draw_transformed_card(card, card_x, base_y, dy, angle_rad, card_width, card_height)
+    -- Hover effect parameters
+    local hover_scale = 1.15 -- Make it noticeably larger
+    local hover_y_offset = -40 -- Move it up significantly
+
+    -- Use push/pop for isolation
+    love.graphics.push()
     
-    -- Draw index number above card's original (unrotated) top-center position for simplicity
-    local number_x = card_x + card_width / 2 - 5 -- Adjust slightly for number width
-    local number_y = base_y + dy - 15 -- Position above the card, considering the offset
-    love.graphics.print(i, number_x, number_y) 
+    -- Apply transformations for hover effect:
+    -- 1. Translate to the card's final base position (including vertical offset and hover offset)
+    love.graphics.translate(card_x + card_width / 2, base_y + dy + hover_y_offset + card_height / 2)
+    -- 2. Scale
+    love.graphics.scale(hover_scale, hover_scale)
+    -- 3. Rotate
+    love.graphics.rotate(angle_rad)
+    -- 4. Translate back by half width/height to draw from top-left corner of the *scaled* card
+    love.graphics.translate(-card_width / 2, -card_height / 2)
+    
+    -- Draw the card itself (at 0,0 because transformations handle position)
+    card:draw(0, 0) -- Assuming Card:draw draws at given x,y
+
+    love.graphics.pop() -- Restore previous graphics state
+
+    -- Draw index number for hovered card (optional, might be visually cluttered)
+    -- Position it relative to the original position for consistency
+    -- local number_x = card_x + card_width / 2 - 5 
+    -- local number_y = base_y + dy - 15 - hover_y_offset -- Adjust slightly higher due to hover
+    -- love.graphics.setColor(1,1,0) -- Maybe highlight?
+    -- love.graphics.print(i, number_x, number_y)
+    -- love.graphics.setColor(1,1,1)
   end
 end
 
 -- Add the update function to handle time-based changes
 function love.update(dt)
+  -- Reset hovered card each frame
+  hovered_card_index = nil
+
+  -- Get mouse position
+  local mx, my = love.mouse.getPosition()
+
   if gameState == 'gameplay' then
     target:update(dt) -- Update the terraforming target (for spinning, etc.)
+    
+    -- Calculate hand layout parameters (reuse from draw_hand if possible, or recalculate)
+    local hand = player_deck.hand
+    local num_cards = #hand
+    local card_width = 150
+    local card_height = 225
+    local card_spacing = 175
+    local total_hand_width = 0
+    if num_cards > 0 then
+      total_hand_width = card_width + (num_cards - 1) * card_spacing
+    end
+    local start_x = (love.graphics.getWidth() - total_hand_width) / 2
+    local max_angle_degrees = 10 
+    local pixel_offset_per_step = 20
+    local base_y = 420
+
+    -- Check for hover, iterating backwards (top cards first)
+    for i = num_cards, 1, -1 do
+      local card = hand[i]
+      local card_x = start_x + (i-1) * card_spacing
+      local angle_rad = DrawHelpers.calculate_card_angle(i, num_cards, max_angle_degrees)
+      local dy = DrawHelpers.calculate_vertical_offset(i, num_cards, pixel_offset_per_step)
+      local current_y = base_y + dy
+
+      -- Create a rough bounding box check (ignoring rotation for simplicity first)
+      -- More accurate check would involve transforming mouse coordinates or using polygons
+      if mx >= card_x and mx <= card_x + card_width and 
+         my >= current_y and my <= current_y + card_height then
+         hovered_card_index = i
+         break -- Found the topmost hovered card
+      end
+    end
+
     -- Add other gameplay-specific updates here if needed
   elseif gameState == 'relationships' then
     RelationshipsView:update(dt) -- Call the relationships view update function
