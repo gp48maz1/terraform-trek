@@ -354,7 +354,6 @@ function RelationshipsView.draw(system_instance)
     local width = love.graphics.getWidth()
     local height = love.graphics.getHeight()
 
-    love.graphics.clear(0.95, 0.95, 0.98, 1) -- Light background
     love.graphics.setColor(0, 0, 0, 1)
     love.graphics.printf("Planetary System Relationships", 0, 20, width, "center")
 

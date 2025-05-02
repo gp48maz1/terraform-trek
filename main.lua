@@ -205,8 +205,16 @@ function love.draw()
     love.graphics.print("Press 'v' to view System Relationships", 10, love.graphics.getHeight() - 20)
 
   elseif gameState == 'relationships' then
-    RelationshipsView.draw(relationship_system_instance) -- Pass the system instance
+    -- Draw a solid light background for testing
+    local bg_color = {0.7, 0.75, 0.8, 1} -- Light Blue-Grey (using the previous top_color)
+    love.graphics.setColor(unpack(bg_color))
+    love.graphics.rectangle('fill', 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
+
+    RelationshipsView.draw(relationship_system_instance) -- Draw relationships on top
     love.graphics.print("Press 'v' to return to Game", 10, love.graphics.getHeight() - 20)
+    
+    -- Reset color to white afterwards for safety
+    love.graphics.setColor(1, 1, 1, 1) 
   end
 end
 
