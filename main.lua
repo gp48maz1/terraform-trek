@@ -185,9 +185,13 @@ function love.update(dt)
 end
 
 function love.draw()
-  Background.draw() -- Draw the background first
+  -- Note: Background drawing is now handled *within* each state block
 
   if gameState == 'gameplay' then
+    -- Draw only the fill and stars for gameplay
+    Background.draw_fill()
+    Background.draw_stars()
+
     -- Display Energy
     love.graphics.print("Energy: " .. current_energy .. " / " .. max_energy, 10, 10)
 
@@ -203,17 +207,24 @@ function love.draw()
 
     -- Instructions to switch view
     love.graphics.print("Press 'v' to view System Relationships", 10, love.graphics.getHeight() - 20)
+    
+    -- Reset color after gameplay drawing
+    love.graphics.setColor(1, 1, 1, 1) 
 
   elseif gameState == 'relationships' then
-    -- Draw a solid light background for testing
-    local bg_color = {0.7, 0.75, 0.8, 1} -- Light Blue-Grey (using the previous top_color)
+    -- 1. Draw the solid light background color
+    local bg_color = {0.7, 0.75, 0.8, 1} -- Light Blue-Grey
     love.graphics.setColor(unpack(bg_color))
     love.graphics.rectangle('fill', 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
 
-    RelationshipsView.draw(relationship_system_instance) -- Draw relationships on top
+    -- 2. Draw *only* the clouds on top
+    Background.draw_clouds()
+
+    -- 3. Draw the relationships view
+    RelationshipsView.draw(relationship_system_instance) 
     love.graphics.print("Press 'v' to return to Game", 10, love.graphics.getHeight() - 20)
     
-    -- Reset color to white afterwards for safety
+    -- 4. Reset color to white afterwards for safety
     love.graphics.setColor(1, 1, 1, 1) 
   end
 end
