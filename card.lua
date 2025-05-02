@@ -1,19 +1,27 @@
 local Card = {}
 Card.__index = Card
 
-function Card:new(o)
-  o = o or {}
+-- Card:new now accepts a data table created by CardTypes.createCardData
+function Card:new(cardData)
+  local o = {} -- Create a new object
   setmetatable(o, self)
 
-  -- Validate required fields
+  -- Assign properties from the data table
+  o.id = cardData.id                     -- Unique identifier
+  o.name = cardData.name                 -- Display name
+  o.description = cardData.description   -- Display description
+  o.category = cardData.category         -- e.g., Terraform, Chance, Power
+  o.cost = cardData.cost                 -- Energy cost (can be nil/0)
+  o.effect_fn_name = cardData.effect_fn_name -- Name of function in CardEffects
+  o.properties = cardData.properties       -- Table of specific properties (damage, draw_amount, etc.)
+
+  -- Basic validation
+  assert(o.id, "Card must have an id.")
   assert(o.name, "Card must have a name.")
   assert(o.description, "Card must have a description.")
   assert(o.category, "Card must have a category.")
 
-  -- Set defaults
-  o.cost = o.cost -- Can be nil if not provided
-  
-  -- Placeholder for image - we can refine this later
+  -- Placeholder for image - keep this for drawing
   o.image_placeholder = { width = 150, height = 225, color = {0, 0, 0} } -- Larger card size
 
   return o

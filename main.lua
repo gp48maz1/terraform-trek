@@ -253,7 +253,9 @@ function love.keypressed(key)
         local cost = card_to_play.cost or 0
         
         if can_afford(cost) then
-          local played_card = player_deck:play_card(card_index, current_energy)
+          -- Pass context including the target
+          local context = { target = target }
+          local played_card = player_deck:play_card(card_index, current_energy, context) -- Pass context
           if played_card then
             spend_energy(played_card.cost) -- Use cost from the actually played card
           end

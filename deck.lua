@@ -1,4 +1,6 @@
 local Card = require('card')
+local CardTypes = require('card_types')
+local CardEffects = require('card_effects')
 
 local Deck = {}
 Deck.__index = Deck
@@ -14,35 +16,29 @@ function Deck:new()
   return o
 end
 
--- Function to create the initial 10-card deck
+-- Function to create the initial starter deck using CardTypes
 function Deck:create_starter_deck()
-  -- Clear existing piles first
   self.draw_pile = {}
   self.hand = {}
   self.discard_pile = {}
 
-  -- Add 5 Attack cards
-  for i = 1, 5 do
-    table.insert(self.draw_pile, Card:new{
-      name = "Strike",
-      description = "Deal 6 damage.",
-      cost = 1,
-      category = "Attack"
-    })
+  -- Define starter deck composition by ID
+  local starter_card_ids = {
+    'basic_strike', 'basic_strike', 'basic_strike', 'basic_strike', 'basic_strike', -- 5 Strikes
+    'basic_defend', 'basic_defend', 'basic_defend', 'basic_defend', 'basic_defend'  -- 5 Defends
+  }
+
+  -- Create card objects from IDs
+  for _, card_id in ipairs(starter_card_ids) do
+    local cardData = CardTypes.createCardData(card_id)
+    if cardData then
+      table.insert(self.draw_pile, Card:new(cardData))
+    else
+      print("Warning: Could not create card data for ID: " .. card_id)
+    end
   end
 
-  -- Add 5 Defend cards
-  for i = 1, 5 do
-    table.insert(self.draw_pile, Card:new{
-      name = "Defend",
-      description = "Gain 5 block.",
-      cost = 1,
-      category = "Skill" -- Example category
-    })
-  end
-  
-  -- Important: Shuffle the starting deck
-  self:shuffle() 
+  self:shuffle()
 end
 
 -- Shuffle the draw pile using Fisher-Yates algorithm
@@ -89,34 +85,56 @@ function Deck:draw(count)
   print("Drew " .. drawn_count .. " card(s).")
 end
 
--- Attempt to play a card from hand, checking energy cost
+-- Attempt to play a card from hand, checking energy and executing effects
 -- Returns the card if played successfully, otherwise nil
-function Deck:play_card(card_index, current_energy)
+-- Accepts a 'context' table containing necessary game state (e.g., context.target)
+function Deck:play_card(card_index, current_energy, context)
+  context = context or {} -- Ensure context table exists
+
   -- Validate index
   if card_index < 1 or card_index > #self.hand then
     print("Error: Invalid card index for play: " .. card_index)
-    return nil 
+    return nil
   end
 
-  local card = self.hand[card_index] -- Get card without removing yet
-  local cost = card.cost or 0 -- Default cost to 0 if nil
+  local card = self.hand[card_index] -- Get card object
+  local cost = card.cost or 0
 
   -- Check energy
   if current_energy < cost then
     print("Error: Not enough energy to play " .. card.name .. ". Needs " .. cost .. ", has " .. current_energy)
     return nil
   end
-  
-  -- Energy check passed, now move the card
-  -- Remove from hand (use the index, as it's validated)
-  card = table.remove(self.hand, card_index) 
-  
-  -- Add to discard pile
-  table.insert(self.discard_pile, card)
-  
-  print("Played card: " .. card.name .. " (Cost: " .. cost .. ")")
-  -- The caller will be responsible for deducting the cost
-  return card -- Return the played card
+
+  -- Energy check passed
+  print("Playing card: " .. card.name .. " (Cost: " .. cost .. ")")
+
+  -- Execute card effect if defined
+  if card.effect_fn_name then
+    local effect_func = CardEffects[card.effect_fn_name]
+    if effect_func and type(effect_func) == 'function' then
+      -- Prepare context for the effect function
+      local effect_context = {
+        card = card,        -- The card object itself
+        deck = self,        -- The deck instance
+        target = context.target -- Pass the target from the main game loop
+        -- Add other needed context later (e.g., player state)
+      }
+      print("Calling effect function: " .. card.effect_fn_name)
+      effect_func(effect_context) -- Execute the effect
+    else
+      print("Warning: Effect function '" .. card.effect_fn_name .. "' not found or not a function in CardEffects.")
+    end
+  else
+     print("Card '" .. card.name .. "' has no defined effect function.")
+  end
+
+  -- Now move the card from hand to discard AFTER effects are resolved
+  local played_card = table.remove(self.hand, card_index)
+  table.insert(self.discard_pile, played_card)
+
+  -- The caller is still responsible for deducting the cost
+  return played_card -- Return the played card object
 end
 
 return Deck 

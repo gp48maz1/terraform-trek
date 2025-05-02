@@ -1,22 +1,22 @@
 local CardTypes = {}
 
--- Base card type definitions
+-- Base card type definitions (Renamed categories)
 CardTypes.BaseTypes = {
-    ATTACK = {
-        category = "Attack",
+    TERRAFORM = {
+        category = "Terraform",
         base_properties = {
-            damage = 0,
+            -- Define base terraform properties if any, e.g., target_type?
             energy_cost = 1
         }
     },
-    SKILL = {
-        category = "Skill",
+    CHANCE = {
+        category = "Chance",
         base_properties = {
-            effect = "none",
+            -- Define base chance properties if any
             energy_cost = 1
         }
     },
-    POWER = {
+    POWER = { -- Keeping Power for now, can remove later if not needed
         category = "Power",
         base_properties = {
             duration = 1,
@@ -25,114 +25,131 @@ CardTypes.BaseTypes = {
     }
 }
 
--- Specific card definitions
+-- Specific card definitions with IDs and effect function names
 CardTypes.Cards = {
-    -- Attack Cards
-    Strike = {
-        name = "Strike",
-        description = "Deal 6 damage.",
-        category = "Attack",
+    -- Terraform Cards (Previously Attack)
+    basic_strike = { -- Using snake_case for IDs
+        id = "basic_strike",
+        name = "Basic Strike",
+        description = "Deal 6 damage to the target.",
+        category = "Terraform", -- Renamed
         cost = 1,
+        effect_fn_name = "deal_damage", -- Effect function name
         properties = {
             damage = 6
         }
     },
-    HeavyStrike = {
+    heavy_strike = {
+        id = "heavy_strike",
         name = "Heavy Strike",
         description = "Deal 10 damage. Costs 2 energy.",
-        category = "Attack",
+        category = "Terraform", -- Renamed
         cost = 2,
+        effect_fn_name = "deal_damage", -- Same effect, different parameters
         properties = {
             damage = 10
         }
     },
-    
-    -- Skill Cards
-    Defend = {
-        name = "Defend",
-        description = "Gain 5 block.",
-        category = "Skill",
+
+    -- Chance Cards (Previously Skill)
+    basic_defend = {
+        id = "basic_defend",
+        name = "Basic Defend",
+        description = "Gain 5 block.", -- Need to define what "block" means
+        category = "Chance", -- Renamed
         cost = 1,
+        effect_fn_name = "gain_block", -- Effect function name
         properties = {
-            effect = "block",
             block_amount = 5
         }
     },
-    Draw = {
-        name = "Draw",
+    draw_cards = {
+        id = "draw_cards",
+        name = "Draw Cards",
         description = "Draw 2 cards.",
-        category = "Skill",
+        category = "Chance", -- Renamed
         cost = 1,
+        effect_fn_name = "draw_cards", -- Effect function name
         properties = {
-            effect = "draw",
             draw_amount = 2
         }
     },
-    
-    -- Power Cards
-    Strength = {
-        name = "Strength",
-        description = "Gain 2 strength for the rest of combat.",
+
+    -- Power Cards (Keep or modify as needed)
+    gain_strength = {
+        id = "gain_strength",
+        name = "Gain Strength",
+        description = "Gain 2 strength for the rest of combat.", -- Define "strength"
         category = "Power",
         cost = 1,
+        effect_fn_name = "apply_buff", -- Generic buff function?
         properties = {
             duration = -1, -- -1 means permanent
-            effect = "strength",
-            strength_amount = 2
+            buff_type = "strength",
+            buff_amount = 2
         }
     },
-    Dexterity = {
-        name = "Dexterity",
-        description = "Gain 2 dexterity for the rest of combat.",
+    gain_dexterity = {
+        id = "gain_dexterity",
+        name = "Gain Dexterity",
+        description = "Gain 2 dexterity for the rest of combat.", -- Define "dexterity"
         category = "Power",
         cost = 1,
+        effect_fn_name = "apply_buff",
         properties = {
             duration = -1,
-            effect = "dexterity",
-            dexterity_amount = 2
+            buff_type = "dexterity",
+            buff_amount = 2
         }
     }
 }
 
--- Function to create a card from a type definition
-function CardTypes.createCard(cardType)
-    local cardDef = CardTypes.Cards[cardType]
+-- Function to create card data from a type definition (ID)
+function CardTypes.createCardData(cardId) -- Renamed function for clarity
+    local cardDef = CardTypes.Cards[cardId]
     if not cardDef then
-        error("Invalid card type: " .. tostring(cardType))
+        error("Invalid card ID: " .. tostring(cardId))
     end
-    
-    -- Merge base properties with specific card properties
-    local baseType = CardTypes.BaseTypes[cardDef.category]
-    local properties = {}
-    
-    if baseType and baseType.base_properties then
-        for k, v in pairs(baseType.base_properties) do
-            properties[k] = v
-        end
-    end
-    
-    if cardDef.properties then
-        for k, v in pairs(cardDef.properties) do
-            properties[k] = v
-        end
-    end
-    
-    return {
+
+    -- Start with the specific card definition
+    local cardData = {
+        id = cardDef.id,
         name = cardDef.name,
         description = cardDef.description,
         category = cardDef.category,
         cost = cardDef.cost,
-        properties = properties
+        effect_fn_name = cardDef.effect_fn_name, -- Include effect function name
+        properties = {}
     }
+
+    -- Merge base properties (if category exists in BaseTypes)
+    local baseType = CardTypes.BaseTypes[cardDef.category]
+    if baseType and baseType.base_properties then
+        for k, v in pairs(baseType.base_properties) do
+            -- Only add base property if not already defined in specific card
+            if cardData.properties[k] == nil then
+                 cardData.properties[k] = v
+            end
+        end
+    end
+
+    -- Merge specific card properties (overwriting base properties if needed)
+    if cardDef.properties then
+        for k, v in pairs(cardDef.properties) do
+            cardData.properties[k] = v
+        end
+    end
+
+    return cardData
 end
 
--- Function to get all available card types
-function CardTypes.getAllCardTypes()
-    local types = {}
-    for name, _ in pairs(CardTypes.Cards) do
-        table.insert(types, name)
+-- Function to get all available card IDs
+function CardTypes.getAllCardIds() -- Renamed function for clarity
+    local ids = {}
+    for id, _ in pairs(CardTypes.Cards) do
+        table.insert(ids, id)
     end
-    return types
+    return ids
 end
 
 return CardTypes 
