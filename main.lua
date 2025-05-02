@@ -3,6 +3,7 @@ local TerraformingTarget = require('terraforming_target')
 local DrawHelpers = require('draw_helpers')
 local RelationshipsView = require('planetary_system_relationships') -- Require the new module
 local PlanetarySystem = require('planetary_system_of_equations') -- Require the system module
+local Background = require('background') -- Require the background module
 
 local player_deck
 local max_energy = 3
@@ -38,6 +39,8 @@ function love.load()
   -- Set random seed based on time for better shuffling
   love.math.setRandomSeed(os.time())
   
+  Background.load() -- Load the background first
+
   -- Create and initialize the deck
   player_deck = Deck:new()
   player_deck:create_starter_deck() -- Creates and shuffles
@@ -182,6 +185,8 @@ function love.update(dt)
 end
 
 function love.draw()
+  Background.draw() -- Draw the background first
+
   if gameState == 'gameplay' then
     -- Display Energy
     love.graphics.print("Energy: " .. current_energy .. " / " .. max_energy, 10, 10)
