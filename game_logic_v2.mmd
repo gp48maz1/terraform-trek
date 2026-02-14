@@ -1,58 +1,36 @@
 flowchart TD
-    subgraph Core["Terraform Core (V2)"]
+    subgraph Core["Core Influence Map (resolved once at End Turn)"]
+        direction LR
         Heat["Heat (-4 to +4)"]
         Air["Air (-4 to +4)"]
         Water["Water (-4 to +4)"]
         Soil["Soil (-4 to +4)"]
-        Targets["World Target Profile<br/>(target Heat/Air/Water/Soil)"]
+
+        Heat -->|"if abs(Heat)>=3: Water += -sign(Heat)"| Water
+        Heat -->|"if abs(Heat)>=3: Soil += -sign(Heat)"| Soil
+        Air -->|"if abs(Air)>=3: Heat += sign(Air)"| Heat
+        Air -->|"if abs(Air)>=3: Water += sign(Air)"| Water
+        Water -->|"if abs(Water)>=3: Soil += sign(Water)"| Soil
+        Water -->|"if abs(Water)>=3: Air += sign(Water)"| Air
+        Soil -->|"if abs(Soil)>=3: Air += sign(Soil)"| Air
     end
 
-    subgraph Coupling["Threshold Coupling (single pass at end turn)"]
-        C1["Heat -> Water (-)"]
-        C2["Heat -> Soil (-)"]
-        C3["Air -> Heat (+)"]
-        C4["Air -> Water (+)"]
-        C5["Water -> Soil (+)"]
-        C6["Water -> Air (+)"]
-        C7["Soil -> Air (+)"]
+    subgraph Turn["Turn Sequence"]
+        direction TB
+        T1["Play cards<br/>(change Heat/Air/Water/Soil)"]
+        T2["End Turn"]
+        T3["Apply hazard deltas"]
+        T4["Apply Core Influence Map"]
+        T5["Score Habitability delta<br/>vs world target profile"]
+        T6{"Goal reached?"}
+        T7{"Turn limit hit?"}
+        T8["Next turn<br/>discard hand, draw 5, reset energy"]
+        T9["World clear"]
+        T10["Run failed"]
+
+        T1 --> T2 --> T3 --> T4 --> T5 --> T6
+        T6 -->|Yes| T9
+        T6 -->|No| T7
+        T7 -->|Yes| T10
+        T7 -->|No| T8 --> T1
     end
-
-    subgraph Turn["Turn Flow"]
-        Start["Start Turn<br/>Energy reset, hand available"] --> Play["Play cards<br/>(click card or 1-9)"]
-        Play --> EndTurn["End Turn<br/>(click END TURN or E)"]
-        EndTurn --> Hazard["Apply Hazard Intent deltas"]
-        Hazard --> ApplyCoupling["Apply coupling changes<br/>if abs(stat) >= 3"]
-        ApplyCoupling --> Score["Score Habitability delta"]
-        Score --> Check{"Goal reached or turn limit hit?"}
-        Check -->|No| Next["Discard hand, draw 5, next turn"]
-        Next --> Start
-        Check -->|Goal reached| Win["World cleared<br/>(N for next world)"]
-        Check -->|Turn limit hit| Lose["Run failed"]
-    end
-
-    Play --> Heat
-    Play --> Air
-    Play --> Water
-    Play --> Soil
-
-    Heat --> C1
-    Heat --> C2
-    Air --> C3
-    Air --> C4
-    Water --> C5
-    Water --> C6
-    Soil --> C7
-
-    C1 --> Water
-    C2 --> Soil
-    C3 --> Heat
-    C4 --> Water
-    C5 --> Soil
-    C6 --> Air
-    C7 --> Air
-
-    Heat --> Score
-    Air --> Score
-    Water --> Score
-    Soil --> Score
-    Targets --> Score
