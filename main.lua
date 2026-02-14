@@ -25,33 +25,33 @@ local INFLUENCE_EDGES = {
 local INFLUENCE_HELP = {
   heat = {
     summary = "Heat is bipolar: too low freezes systems, too high scorches systems.",
-    incoming = "Air pushes Heat by following Air's sign when Air is extreme.",
+    incoming = "Air influences Heat whenever Air is extreme enough to trigger coupling.",
     outgoing = {
-      "Heat pushes Water by flipping Heat's sign.",
-      "Heat pushes Soil by flipping Heat's sign."
+      "Heat can shift Water.",
+      "Heat can shift Soil."
     }
   },
   air = {
     summary = "Air is one-directional health: very negative is toxic/thin, zero is ideal.",
-    incoming = "Water and Soil push Air by following their sign.",
+    incoming = "Water and Soil influence Air when they hit coupling threshold.",
     outgoing = {
-      "Air pushes Heat by following Air's sign.",
-      "Air pushes Water by following Air's sign."
+      "Air can shift Heat.",
+      "Air can shift Water."
     }
   },
   water = {
     summary = "Water is bipolar: very negative means ice lock, very positive means steam lock.",
-    incoming = "Heat flips Water's sign while Air follows Air's sign.",
+    incoming = "Heat and Air both influence Water once coupling is active.",
     outgoing = {
-      "Water pushes Soil by following Water's sign.",
-      "Water pushes Air by following Water's sign."
+      "Water can shift Soil.",
+      "Water can shift Air."
     }
   },
   soil = {
     summary = "Soil is one-directional health: very negative is sterile regolith, zero is ideal.",
-    incoming = "Heat flips Soil's sign while Water follows Water's sign.",
+    incoming = "Heat and Water influence Soil once coupling is active.",
     outgoing = {
-      "Soil pushes Air by following Soil's sign."
+      "Soil can shift Air."
     }
   }
 }
@@ -113,16 +113,14 @@ local focused_stat = "heat"
 local selected_forecast_card_index = nil
 local forecast_mode = "current" -- current | do_nothing | selected
 local edge_filter_mode = "focused_both" -- focused_both | focused_incoming | focused_outgoing | all
-local edge_color_mode = "impact" -- impact | relation
 
 local hovered_card_index = nil
 local hovered_draw_pile = false
 local hovered_discard_pile = false
 local hovered_end_turn = false
 local hovered_influence_stat = nil
-local hovered_forecast_card_index = nil
+local hovered_forecast_option_index = nil
 local hovered_edge_filter_button = false
-local hovered_edge_color_button = false
 local hovered_forecast_mode = nil
 
 local max_energy = 3
@@ -319,13 +317,6 @@ local function get_edge_filter_label(mode)
   return "In + Out"
 end
 
-local function get_edge_color_label(mode)
-  if mode == "relation" then
-    return "Polarity"
-  end
-  return "Current Impact"
-end
-
 local function cycle_edge_filter_mode()
   local modes = { "focused_both", "focused_incoming", "focused_outgoing", "all" }
   for i, mode in ipairs(modes) do
@@ -335,14 +326,6 @@ local function cycle_edge_filter_mode()
     end
   end
   edge_filter_mode = modes[1]
-end
-
-local function cycle_edge_color_mode()
-  if edge_color_mode == "impact" then
-    edge_color_mode = "relation"
-  else
-    edge_color_mode = "impact"
-  end
 end
 
 local function edge_is_visible(edge)
@@ -468,52 +451,38 @@ end
 local function get_map_toggle_buttons(layout)
   local map_rect = layout.map_rect
   local button_h = 26
-  local filter_w = 176
-  local color_w = 182
-  local gap = 8
+  local filter_w = 198
   local right = map_rect.x + map_rect.w - 12
-  local color_x = right - color_w
-  local filter_x = color_x - gap - filter_w
+  local filter_x = right - filter_w
   local y = map_rect.y + 8
 
   return {
-    filter = { x = filter_x, y = y, w = filter_w, h = button_h },
-    color = { x = color_x, y = y, w = color_w, h = button_h }
+    filter = { x = filter_x, y = y, w = filter_w, h = button_h }
   }
 end
 
 local function get_forecast_mode_buttons(layout)
   local rect = layout.forecast_rect
-  local labels = {
-    { id = "current", text = "Current" },
-    { id = "do_nothing", text = "Do Nothing" },
-    { id = "selected", text = "Selected Card" }
-  }
-  local buttons = {}
-  local gap = 8
-  local total_gap = gap * (#labels - 1)
-  local button_w = math.floor((rect.w - 28 - total_gap) / #labels)
-  local x = rect.x + 14
-  local y = rect.y + 52
-
-  for _, item in ipairs(labels) do
-    table.insert(buttons, {
-      id = item.id,
-      text = item.text,
-      x = x,
-      y = y,
-      w = button_w,
+  return {
+    {
+      id = "current",
+      text = "Current",
+      x = rect.x + 14,
+      y = rect.y + 52,
+      w = 168,
       h = 24
-    })
-    x = x + button_w + gap
-  end
-
-  return buttons
+    }
+  }
 end
 
 local function get_influence_card_rects(layout)
   local rows = {}
-  local cards = player_deck.hand
+  local options = {
+    { kind = "do_nothing" }
+  }
+  for i, card in ipairs(player_deck.hand) do
+    table.insert(options, { kind = "card", card = card, card_index = i })
+  end
   local rect = layout.cards_rect
   local card_w = 185
   local card_h = 58
@@ -523,12 +492,18 @@ local function get_influence_card_rects(layout)
   local used_width = cards_per_row * card_w + (cards_per_row - 1) * gap_x
   local start_x = rect.x + math.floor((rect.w - used_width) / 2)
 
-  for i, card in ipairs(cards) do
+  for i, option in ipairs(options) do
     local row = math.floor((i - 1) / cards_per_row)
     local col = (i - 1) % cards_per_row
     local x = start_x + col * (card_w + gap_x)
     local y = rect.y + 34 + row * (card_h + gap_y)
-    rows[i] = { x = x, y = y, w = card_w, h = card_h, card = card }
+    rows[i] = {
+      x = x,
+      y = y,
+      w = card_w,
+      h = card_h,
+      option = option
+    }
   end
 
   return rows
@@ -544,7 +519,6 @@ local function setup_world(index)
   focused_stat = "heat"
   forecast_mode = "current"
   edge_filter_mode = "focused_both"
-  edge_color_mode = "impact"
 
   player_deck:create_starter_deck()
   player_deck:draw(5)
@@ -562,6 +536,7 @@ local function end_turn()
 
   turn_summary = terraforming_state:end_turn()
   selected_forecast_card_index = nil
+  forecast_mode = "current"
 
   if terraforming_state.status == "won" then
     if world_index == #WORLD_CONFIGS then
@@ -603,9 +578,7 @@ local function compute_forecasts(card_index)
     if card then
       local snapshot = copy_stats(terraforming_state.stats)
       local affordable = can_afford(card.cost or 0)
-      if affordable then
-        apply_card_to_snapshot(card, snapshot)
-      end
+      apply_card_to_snapshot(card, snapshot)
       scenario = {
         card = card,
         affordable = affordable,
@@ -621,8 +594,8 @@ local function get_forecast_context()
   local baseline, scenario = compute_forecasts(selected_forecast_card_index)
   local active_mode = forecast_mode
 
-  if active_mode == "selected" and (not scenario or not scenario.affordable) then
-    active_mode = "current"
+  if active_mode == "selected" and not scenario then
+    active_mode = "do_nothing"
   end
 
   local active_snapshot = terraforming_state.stats
@@ -736,6 +709,7 @@ local function try_play_card(card_index)
   if played_card then
     spend_energy(played_card.cost)
     selected_forecast_card_index = nil
+    forecast_mode = "current"
     return true
   end
 
@@ -948,7 +922,6 @@ local function draw_status_overlay()
 end
 
 local function draw_influence_edge(source, target, edge, highlight, snapshot)
-  local factor = edge.factor
   local current_delta = get_edge_trigger_delta(edge, snapshot)
   local is_active = current_delta ~= 0
   local dx = target.x - source.x
@@ -974,18 +947,10 @@ local function draw_influence_edge(source, target, edge, highlight, snapshot)
   local control_y = mid_y + perp_y * curve
 
   local color = { 0.55, 0.6, 0.67, 0.45 }
-  if edge_color_mode == "impact" then
-    if current_delta > 0 then
-      color = highlight and { 0.45, 0.95, 0.45, 1 } or { 0.33, 0.72, 0.37, 0.78 }
-    elseif current_delta < 0 then
-      color = highlight and { 0.98, 0.45, 0.45, 1 } or { 0.76, 0.34, 0.34, 0.78 }
-    end
-  else
-    if factor > 0 then
-      color = highlight and { 0.48, 0.88, 1.0, 1 } or { 0.34, 0.66, 0.78, is_active and 0.8 or 0.45 }
-    else
-      color = highlight and { 0.98, 0.78, 0.3, 1 } or { 0.75, 0.58, 0.35, is_active and 0.8 or 0.45 }
-    end
+  if current_delta > 0 then
+    color = highlight and { 0.45, 0.95, 0.45, 1 } or { 0.33, 0.72, 0.37, 0.78 }
+  elseif current_delta < 0 then
+    color = highlight and { 0.98, 0.45, 0.45, 1 } or { 0.76, 0.34, 0.34, 0.78 }
   end
 
   love.graphics.setColor(unpack(color))
@@ -1030,13 +995,63 @@ local function draw_influence_edge(source, target, edge, highlight, snapshot)
   love.graphics.setColor(unpack(color))
   love.graphics.circle("line", badge_x, badge_y, 10)
   love.graphics.setColor(1, 1, 1, 1)
-  local badge_text = nil
-  if edge_color_mode == "impact" then
-    badge_text = format_signed(current_delta)
-  else
-    badge_text = factor > 0 and "F" or "X"
-  end
+  local badge_text = format_signed(current_delta)
   love.graphics.printf(badge_text, badge_x - 10, badge_y - 7, 20, "center")
+end
+
+local function value_to_track_x(bounds, value, x, w)
+  local span = bounds.max - bounds.min
+  if span <= 0 then
+    return x + (w * 0.5)
+  end
+  local t = (value - bounds.min) / span
+  return x + t * w
+end
+
+local function draw_stat_track(node, stat_key, current_value, preview_value, target_value)
+  local bounds = terraforming_state:get_stat_bounds(stat_key)
+  local track_w = math.floor(node.r * 1.6)
+  local track_h = 12
+  local track_x = math.floor(node.x - (track_w * 0.5))
+  local track_y = math.floor(node.y - node.r - 24)
+  local current_x = value_to_track_x(bounds, current_value, track_x, track_w)
+  local target_x = value_to_track_x(bounds, target_value, track_x, track_w)
+
+  love.graphics.setColor(0.08, 0.1, 0.14, 0.96)
+  love.graphics.rectangle("fill", track_x, track_y, track_w, track_h, 4, 4)
+  love.graphics.setColor(0.58, 0.67, 0.78, 0.95)
+  love.graphics.rectangle("line", track_x, track_y, track_w, track_h, 4, 4)
+
+  local shade_x = math.min(current_x, target_x)
+  local shade_w = math.abs(target_x - current_x)
+  if shade_w > 0.5 then
+    love.graphics.setColor(0.26, 0.64, 0.34, 0.75)
+    love.graphics.rectangle("fill", shade_x, track_y + 2, shade_w, track_h - 4, 2, 2)
+  end
+
+  love.graphics.setColor(0.86, 0.9, 0.96, 0.95)
+  love.graphics.line(target_x, track_y - 2, target_x, track_y + track_h + 2)
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.polygon(
+    "fill",
+    current_x, track_y - 5,
+    current_x + 5, track_y,
+    current_x, track_y + 5,
+    current_x - 5, track_y
+  )
+
+  if preview_value and math.abs(preview_value - current_value) > 0.001 then
+    local preview_x = value_to_track_x(bounds, preview_value, track_x, track_w)
+    love.graphics.setColor(0.45, 0.78, 1.0, 1)
+    love.graphics.polygon(
+      "fill",
+      preview_x, track_y + track_h - 1,
+      preview_x + 5, track_y + track_h + 4,
+      preview_x, track_y + track_h + 9,
+      preview_x - 5, track_y + track_h + 4
+    )
+  end
 end
 
 local function draw_influence_nodes(layout, forecast_ctx)
@@ -1054,7 +1069,6 @@ local function draw_influence_nodes(layout, forecast_ctx)
   love.graphics.printf("Edges activate when |source| >= " .. tostring(terraforming_state.coupling_threshold), map_rect.x + 12, map_rect.y + 30, map_rect.w - 24, "left")
 
   local filter_fill = hovered_edge_filter_button and { 0.2, 0.3, 0.4, 0.95 } or { 0.14, 0.19, 0.27, 0.95 }
-  local color_fill = hovered_edge_color_button and { 0.2, 0.3, 0.4, 0.95 } or { 0.14, 0.19, 0.27, 0.95 }
   love.graphics.setColor(unpack(filter_fill))
   love.graphics.rectangle("fill", toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h, 7, 7)
   love.graphics.setColor(0.7, 0.82, 0.96, 1)
@@ -1062,36 +1076,31 @@ local function draw_influence_nodes(layout, forecast_ctx)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf("Flow: " .. get_edge_filter_label(edge_filter_mode), toggle_buttons.filter.x + 8, toggle_buttons.filter.y + 6, toggle_buttons.filter.w - 12, "left")
 
-  love.graphics.setColor(unpack(color_fill))
-  love.graphics.rectangle("fill", toggle_buttons.color.x, toggle_buttons.color.y, toggle_buttons.color.w, toggle_buttons.color.h, 7, 7)
-  love.graphics.setColor(0.7, 0.82, 0.96, 1)
-  love.graphics.rectangle("line", toggle_buttons.color.x, toggle_buttons.color.y, toggle_buttons.color.w, toggle_buttons.color.h, 7, 7)
+  love.graphics.setColor(0.45, 0.95, 0.45, 1)
+  love.graphics.circle("fill", map_rect.x + 18, map_rect.y + 58, 7)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Color: " .. get_edge_color_label(edge_color_mode), toggle_buttons.color.x + 8, toggle_buttons.color.y + 6, toggle_buttons.color.w - 12, "left")
+  love.graphics.print("+ target impact", map_rect.x + 30, map_rect.y + 51)
+  love.graphics.setColor(0.98, 0.45, 0.45, 1)
+  love.graphics.circle("fill", map_rect.x + 156, map_rect.y + 58, 7)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("- target impact", map_rect.x + 168, map_rect.y + 51)
+  love.graphics.setColor(0.62, 0.66, 0.74, 1)
+  love.graphics.circle("fill", map_rect.x + 292, map_rect.y + 58, 7)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("0 inactive", map_rect.x + 304, map_rect.y + 51)
 
-  if edge_color_mode == "impact" then
-    love.graphics.setColor(0.45, 0.95, 0.45, 1)
-    love.graphics.circle("fill", map_rect.x + 18, map_rect.y + 58, 7)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("+ target impact", map_rect.x + 30, map_rect.y + 51)
-    love.graphics.setColor(0.98, 0.45, 0.45, 1)
-    love.graphics.circle("fill", map_rect.x + 156, map_rect.y + 58, 7)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("- target impact", map_rect.x + 168, map_rect.y + 51)
-    love.graphics.setColor(0.62, 0.66, 0.74, 1)
-    love.graphics.circle("fill", map_rect.x + 292, map_rect.y + 58, 7)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("0 inactive", map_rect.x + 304, map_rect.y + 51)
-  else
-    love.graphics.setColor(0.48, 0.88, 1.0, 1)
-    love.graphics.circle("fill", map_rect.x + 18, map_rect.y + 58, 7)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("F = target follows source sign", map_rect.x + 30, map_rect.y + 51)
-    love.graphics.setColor(0.98, 0.78, 0.3, 1)
-    love.graphics.circle("fill", map_rect.x + 260, map_rect.y + 58, 7)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("X = target flips source sign", map_rect.x + 272, map_rect.y + 51)
-  end
+  local white_dx = map_rect.x + 402
+  local blue_dx = map_rect.x + 528
+  local diamond_y = map_rect.y + 58
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.polygon("fill", white_dx, diamond_y - 6, white_dx + 6, diamond_y, white_dx, diamond_y + 6, white_dx - 6, diamond_y)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("current notch", white_dx + 11, map_rect.y + 51)
+
+  love.graphics.setColor(0.45, 0.78, 1.0, 1)
+  love.graphics.polygon("fill", blue_dx, diamond_y - 6, blue_dx + 6, diamond_y, blue_dx, diamond_y + 6, blue_dx - 6, diamond_y)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("selected-card notch", blue_dx + 11, map_rect.y + 51)
 
   for _, edge in ipairs(INFLUENCE_EDGES) do
     if edge_is_visible(edge) then
@@ -1105,9 +1114,13 @@ local function draw_influence_nodes(layout, forecast_ctx)
   for _, key in ipairs(STAT_ORDER) do
     local node = layout.nodes[key]
     local value = snapshot[key]
+    local current_value = terraforming_state.stats[key]
+    local preview_value = (forecast_ctx.active_mode == "selected") and snapshot[key] or nil
     local status, color = get_stat_status(key, value)
     local is_focused = key == focused_stat
     local is_hovered = key == hovered_influence_stat
+
+    draw_stat_track(node, key, current_value, preview_value, terraforming_state.targets[key])
 
     love.graphics.setColor(0.08, 0.1, 0.14, 0.95)
     love.graphics.circle("fill", node.x, node.y, node.r)
@@ -1235,7 +1248,6 @@ local function draw_forecast_panel(layout, forecast_ctx)
   local recommendations = compute_play_recommendations(3)
   local focused_target = terraforming_state.targets[focused_stat]
   local mode_buttons = get_forecast_mode_buttons(layout)
-  local selected_available = scenario and scenario.affordable
 
   love.graphics.setColor(0.06, 0.08, 0.12, 0.92)
   love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 10, 10)
@@ -1251,16 +1263,11 @@ local function draw_forecast_panel(layout, forecast_ctx)
 
   for _, button in ipairs(mode_buttons) do
     local active = forecast_ctx.active_mode == button.id
-    local disabled = (button.id == "selected") and not selected_available
     local hovered = hovered_forecast_mode == button.id
     local fill = active and { 0.24, 0.42, 0.26, 0.98 } or { 0.13, 0.18, 0.25, 0.98 }
     local border = active and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
     if hovered and not active then
       fill = { 0.18, 0.24, 0.33, 0.98 }
-    end
-    if disabled then
-      fill = active and { 0.35, 0.24, 0.14, 0.95 } or { 0.24, 0.16, 0.12, 0.9 }
-      border = { 0.88, 0.67, 0.45, 1 }
     end
 
     love.graphics.setColor(unpack(fill))
@@ -1273,7 +1280,7 @@ local function draw_forecast_panel(layout, forecast_ctx)
 
   local split_x = rect.x + math.floor(rect.w * 0.5)
   love.graphics.printf("Do Nothing Outcome", rect.x + 14, rect.y + 82, rect.w * 0.46, "left")
-  love.graphics.printf("Selected Card Outcome", split_x + 8, rect.y + 82, rect.w * 0.46 - 12, "left")
+  love.graphics.printf("Selected Option Outcome", split_x + 8, rect.y + 82, rect.w * 0.46 - 12, "left")
 
   local left_y = rect.y + 102
   for _, key in ipairs(STAT_ORDER) do
@@ -1299,43 +1306,44 @@ local function draw_forecast_panel(layout, forecast_ctx)
   )
 
   if scenario then
-    if scenario.affordable then
-      local right_y = rect.y + 102
-      for _, key in ipairs(STAT_ORDER) do
-        local now_val = terraforming_state.stats[key]
-        local end_val = scenario.summary.projected_stats[key]
-        love.graphics.printf(
-          STAT_LABELS[key] .. " " .. format_signed(now_val) .. " -> " .. format_signed(end_val),
-          split_x + 8,
-          right_y,
-          rect.w * 0.46 - 12,
-          "left"
-        )
-        right_y = right_y + 15
-      end
-      local scen_focus_end = scenario.summary.projected_stats[focused_stat]
-      love.graphics.printf(
-        "Net Habitability: " .. format_signed(scenario.summary.net) ..
-          " (" .. format_signed(scenario.summary.net - baseline.net) .. " vs now)",
-        split_x + 8,
-        right_y + 2,
-        rect.w * 0.46 - 12,
-        "left"
-      )
-      love.graphics.printf(
-        STAT_LABELS[focused_stat] .. " to target: " .. tostring(math.abs(scen_focus_end - focused_target)),
-        split_x + 8,
-        right_y + 18,
-        rect.w * 0.46 - 12,
-        "left"
-      )
-    else
+    local right_y = rect.y + 102
+    if not scenario.affordable then
       love.graphics.setColor(0.98, 0.65, 0.35, 1)
-      love.graphics.printf("Not enough energy for selected card.", split_x + 8, rect.y + 104, rect.w * 0.46 - 12, "left")
+      love.graphics.printf("Card unaffordable now (preview only).", split_x + 8, right_y, rect.w * 0.46 - 12, "left")
       love.graphics.setColor(1, 1, 1, 1)
+      right_y = right_y + 16
     end
+
+    for _, key in ipairs(STAT_ORDER) do
+      local now_val = terraforming_state.stats[key]
+      local end_val = scenario.summary.projected_stats[key]
+      love.graphics.printf(
+        STAT_LABELS[key] .. " " .. format_signed(now_val) .. " -> " .. format_signed(end_val),
+        split_x + 8,
+        right_y,
+        rect.w * 0.46 - 12,
+        "left"
+      )
+      right_y = right_y + 15
+    end
+    local scen_focus_end = scenario.summary.projected_stats[focused_stat]
+    love.graphics.printf(
+      "Net Habitability: " .. format_signed(scenario.summary.net) ..
+        " (" .. format_signed(scenario.summary.net - baseline.net) .. " vs now)",
+      split_x + 8,
+      right_y + 2,
+      rect.w * 0.46 - 12,
+      "left"
+    )
+    love.graphics.printf(
+      STAT_LABELS[focused_stat] .. " to target: " .. tostring(math.abs(scen_focus_end - focused_target)),
+      split_x + 8,
+      right_y + 18,
+      rect.w * 0.46 - 12,
+      "left"
+    )
   else
-    love.graphics.printf("Select a card below to preview a one-card outcome.", split_x + 8, rect.y + 104, rect.w * 0.46 - 12, "left")
+    love.graphics.printf("Select a card below to preview a one-card outcome.", split_x + 8, rect.y + 102, rect.w * 0.46 - 12, "left")
   end
 
   local rec_start_y = rect.y + 182
@@ -1378,13 +1386,21 @@ local function draw_influence_cards(layout)
   love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 10, 10)
 
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Card Preview Selector (click one card to forecast, click again to clear)", rect.x + 10, rect.y + 10, rect.w - 20, "left")
+  love.graphics.printf("Preview Selector (Do Nothing or card). Use Current above to clear preview.", rect.x + 10, rect.y + 10, rect.w - 20, "left")
 
   for i, card_rect in ipairs(card_rects) do
-    local card = card_rect.card
-    local selected = (selected_forecast_card_index == i)
-    local hovered = (hovered_forecast_card_index == i)
-    local affordable = can_afford(card.cost or 0)
+    local option = card_rect.option
+    local is_do_nothing = option.kind == "do_nothing"
+    local card = option.card
+    local selected = false
+    local affordable = true
+    if is_do_nothing then
+      selected = forecast_mode == "do_nothing"
+    else
+      selected = forecast_mode == "selected" and selected_forecast_card_index == option.card_index
+      affordable = can_afford(card.cost or 0)
+    end
+    local hovered = (hovered_forecast_option_index == i)
 
     local fill = selected and { 0.22, 0.38, 0.25, 0.98 } or { 0.12, 0.14, 0.18, 0.98 }
     local border = selected and { 0.64, 0.93, 0.62, 1 } or { 0.48, 0.58, 0.7, 1 }
@@ -1403,14 +1419,19 @@ local function draw_influence_cards(layout)
 
     local text_color = affordable and { 1, 1, 1, 1 } or { 1, 0.75, 0.6, 1 }
     love.graphics.setColor(unpack(text_color))
-    love.graphics.printf(i .. ". " .. card.name, card_rect.x + 8, card_rect.y + 8, card_rect.w - 16, "left")
-    love.graphics.printf(
-      "Cost " .. tostring(card.cost or 0) .. " | " .. card.description,
-      card_rect.x + 8,
-      card_rect.y + 28,
-      card_rect.w - 16,
-      "left"
-    )
+    if is_do_nothing then
+      love.graphics.printf("0. Do Nothing", card_rect.x + 8, card_rect.y + 8, card_rect.w - 16, "left")
+      love.graphics.printf("Preview end-turn outcome without playing a card.", card_rect.x + 8, card_rect.y + 28, card_rect.w - 16, "left")
+    else
+      love.graphics.printf(option.card_index .. ". " .. card.name, card_rect.x + 8, card_rect.y + 8, card_rect.w - 16, "left")
+      love.graphics.printf(
+        "Cost " .. tostring(card.cost or 0) .. " | " .. card.description,
+        card_rect.x + 8,
+        card_rect.y + 28,
+        card_rect.w - 16,
+        "left"
+      )
+    end
   end
 end
 
@@ -1423,8 +1444,8 @@ local function draw_influence_screen()
 
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print("Core Influence Map (V)", 16, 12)
-  love.graphics.print("Click primitive to focus. Flow toggle filters edges. Color toggle = impact vs polarity.", 16, 32)
-  love.graphics.print("M mapping, C clear card, I flow, O color, Z current, X do nothing, P selected, V gameplay.", 16, 52)
+  love.graphics.print("Click primitive to focus. Arrows show current coupling impact only.", 16, 32)
+  love.graphics.print("M mapping, C clear card, I flow, Z current, X do nothing, P selected card, V gameplay.", 16, 52)
 
   draw_influence_nodes(layout, forecast_ctx)
   draw_influence_details(layout, forecast_ctx)
@@ -1445,9 +1466,8 @@ function love.update(dt)
   hovered_discard_pile = false
   hovered_end_turn = false
   hovered_influence_stat = nil
-  hovered_forecast_card_index = nil
+  hovered_forecast_option_index = nil
   hovered_edge_filter_button = false
-  hovered_edge_color_button = false
   hovered_forecast_mode = nil
 
   local mx, my = love.mouse.getPosition()
@@ -1469,7 +1489,6 @@ function love.update(dt)
     local layout = get_influence_layout()
     local toggle_buttons = get_map_toggle_buttons(layout)
     hovered_edge_filter_button = point_in_rect(mx, my, toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h)
-    hovered_edge_color_button = point_in_rect(mx, my, toggle_buttons.color.x, toggle_buttons.color.y, toggle_buttons.color.w, toggle_buttons.color.h)
 
     local forecast_buttons = get_forecast_mode_buttons(layout)
     for _, button in ipairs(forecast_buttons) do
@@ -1490,7 +1509,7 @@ function love.update(dt)
     local card_rects = get_influence_card_rects(layout)
     for i, rect in ipairs(card_rects) do
       if point_in_rect(mx, my, rect.x, rect.y, rect.w, rect.h) then
-        hovered_forecast_card_index = i
+        hovered_forecast_option_index = i
         break
       end
     end
@@ -1559,11 +1578,6 @@ function love.keypressed(key)
       return
     end
 
-    if key == "o" then
-      cycle_edge_color_mode()
-      return
-    end
-
     if key == "z" then
       selected_forecast_card_index = nil
       forecast_mode = "current"
@@ -1586,23 +1600,14 @@ function love.keypressed(key)
 
     if key == "c" then
       selected_forecast_card_index = nil
-      if forecast_mode == "selected" then
-        forecast_mode = "current"
-      end
+      forecast_mode = "current"
       return
     end
 
     local num = tonumber(key)
     if num and num >= 1 and num <= #player_deck.hand then
-      if selected_forecast_card_index == num then
-        selected_forecast_card_index = nil
-        if forecast_mode == "selected" then
-          forecast_mode = "current"
-        end
-      else
-        selected_forecast_card_index = num
-        forecast_mode = "selected"
-      end
+      selected_forecast_card_index = num
+      forecast_mode = "selected"
     end
     return
   end
@@ -1636,27 +1641,11 @@ function love.mousepressed(x, y, button)
       return
     end
 
-    if point_in_rect(x, y, toggle_buttons.color.x, toggle_buttons.color.y, toggle_buttons.color.w, toggle_buttons.color.h) then
-      cycle_edge_color_mode()
-      return
-    end
-
     local forecast_buttons = get_forecast_mode_buttons(layout)
-    local forecast_ctx = get_forecast_context()
     for _, button in ipairs(forecast_buttons) do
       if point_in_rect(x, y, button.x, button.y, button.w, button.h) then
-        if button.id == "current" then
-          selected_forecast_card_index = nil
-          forecast_mode = "current"
-        elseif button.id == "selected" then
-          if forecast_ctx.scenario and forecast_ctx.scenario.affordable then
-            forecast_mode = "selected"
-          else
-            forecast_mode = "do_nothing"
-          end
-        else
-          forecast_mode = button.id
-        end
+        selected_forecast_card_index = nil
+        forecast_mode = "current"
         return
       end
     end
@@ -1672,13 +1661,12 @@ function love.mousepressed(x, y, button)
     local card_rects = get_influence_card_rects(layout)
     for i, rect in ipairs(card_rects) do
       if point_in_rect(x, y, rect.x, rect.y, rect.w, rect.h) then
-        if selected_forecast_card_index == i then
+        local option = rect.option
+        if option.kind == "do_nothing" then
           selected_forecast_card_index = nil
-          if forecast_mode == "selected" then
-            forecast_mode = "current"
-          end
+          forecast_mode = "do_nothing"
         else
-          selected_forecast_card_index = i
+          selected_forecast_card_index = option.card_index
           forecast_mode = "selected"
         end
         return
