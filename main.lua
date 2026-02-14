@@ -1708,14 +1708,11 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
     "left"
   )
 
-  draw_end_objective_metric_graph(rect, rect.y + 56, "Population", current_population, active_population, { 0.35, 0.66, 0.42 })
-  draw_end_objective_metric_graph(rect, rect.y + 104, "Profit", current_profit, active_profit, { 0.66, 0.56, 0.24 })
-
-  local primitive_header_y = rect.y + 146
+  local primitive_header_y = rect.y + 56
   local tile_gap = 8
   local tile_w = math.floor((rect.w - 28 - (tile_gap * 3)) / 4)
-  local tile_h = 54
-  local tile_y = primitive_header_y + 18
+  local tile_h = 52
+  local tile_y = primitive_header_y + 16
 
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
   love.graphics.printf("Primitive Status (-1 / 0 / +1)", rect.x + 14, primitive_header_y, rect.w - 28, "left")
@@ -1736,10 +1733,14 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
     if active_score ~= current_score then
       score_text = score_text .. " -> " .. format_signed(active_score)
     end
-    love.graphics.printf(score_text, tile_x + 6, tile_y + 36, tile_w - 12, "center")
+    love.graphics.printf(score_text, tile_x + 6, tile_y + 35, tile_w - 12, "center")
   end
 
-  local math_y = tile_y + tile_h + 10
+  local bars_y = tile_y + tile_h + 10
+  draw_end_objective_metric_graph(rect, bars_y, "Population", current_population, active_population, { 0.35, 0.66, 0.42 })
+  draw_end_objective_metric_graph(rect, bars_y + 48, "Profit", current_profit, active_profit, { 0.66, 0.56, 0.24 })
+
+  local math_y = bars_y + 92
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf(
     "Pop math (" .. mode_text .. "): d = +1 + " .. format_signed(active_breakdown.primitive) ..
@@ -1771,11 +1772,11 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
 
   local slot_gap = 8
   local slot_w = math.floor((rect.w - 28 - ((slot_count - 1) * slot_gap)) / slot_count)
-  local slot_h = 54
-  local slot_y = math_y + 44
+  local slot_y = math_y + 42
+  local slot_h = math.max(44, math.min(54, explain_button.y - 8 - slot_y))
 
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Industry Slots (slot profit term)", rect.x + 14, slot_y - 18, rect.w - 28, "left")
+  love.graphics.printf("Industry Slots (income per turn)", rect.x + 14, slot_y - 18, rect.w - 28, "left")
   for i = 1, terraforming_state:get_industry_slot_count() do
     local slot_x = rect.x + 14 + ((i - 1) * (slot_w + slot_gap))
     local industry = active_industries[i]
@@ -1806,30 +1807,27 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
 
     love.graphics.setColor(1, 1, 1, 1)
     if industry then
+      local income_value
+      if term and term.income ~= nil then
+        income_value = term.income
+      else
+        local pop_bonus = math.floor((active_population or current_population) * (industry.population_factor or 0) + 0.5)
+        income_value = (industry.base_profit or 0) + pop_bonus
+      end
       local name_text = industry.name
       if #name_text > 18 then
         name_text = string.sub(name_text, 1, 17) .. "..."
       end
       local line_1 = fit_single_line(tostring(i) .. ". " .. name_text, slot_w - 12)
-      local line_2 = fit_single_line(
-        "HP " .. tostring(industry.health) .. "/" .. tostring(industry.max_health) ..
-          " | d$ " .. (term and format_signed(term.income or 0) or "?"),
-        slot_w - 12
-      )
+      local line_2 = fit_single_line("Income " .. format_signed(income_value) .. " / turn | HP " .. tostring(industry.health) .. "/" .. tostring(industry.max_health), slot_w - 12)
       love.graphics.printf(line_1, slot_x + 6, slot_y + 8, slot_w - 12, "left")
-      love.graphics.printf(
-        line_2,
-        slot_x + 6,
-        slot_y + 30,
-        slot_w - 12,
-        "left"
-      )
+      love.graphics.printf(line_2, slot_x + 6, slot_y + 28, slot_w - 12, "left")
     else
       local destroyed = industry_report and industry_report[i] and industry_report[i].destroyed
       love.graphics.setColor(destroyed and 0.98 or 0.75, destroyed and 0.55 or 0.87, destroyed and 0.52 or 0.95, 1)
       local line_1 = fit_single_line(tostring(i) .. ". " .. (destroyed and "Destroyed" or "Open"), slot_w - 12)
-      love.graphics.printf(line_1, slot_x + 6, slot_y + 10, slot_w - 12, "left")
-      love.graphics.printf("d$ 0", slot_x + 6, slot_y + 31, slot_w - 12, "left")
+      love.graphics.printf(line_1, slot_x + 6, slot_y + 8, slot_w - 12, "left")
+      love.graphics.printf("Income +0 / turn", slot_x + 6, slot_y + 28, slot_w - 12, "left")
     end
   end
 
