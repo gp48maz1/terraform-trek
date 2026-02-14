@@ -5,12 +5,19 @@ A rogue-like game built in Lua and Love2d inspired by Terraforming Mars.
 
 The current gameplay prototype is a simple card-driven terraforming system:
 
-- Four terraform primitives: `Heat`, `Air`, `Water`, `Soil` (range `-4` to `+4`)
+- Four terraform primitives:
+  - `Heat` and `Water`: range `-10` to `+10` (bipolar; too low or too high are both bad)
+  - `Air` and `Soil`: range `-10` to `0` (one-directional health; `0` is ideal)
 - A target value for each primitive per world
 - One output meter: `Habitability`
 - End-turn hazards (intent shown in the HUD)
 - End-turn coupling rules where extreme stats push other stats
 - Three sequential worlds: low threat, elite, boss
+- Interactive Core Influence screen:
+  - click a primitive to focus incoming/outgoing effects
+  - see trigger threshold status and current coupling impact
+  - preview end-of-turn outcomes (baseline vs selected card)
+  - see best immediate playable card recommendations
 
 ### Flow Diagram
 
@@ -39,6 +46,9 @@ flowchart TD
 
 - Click a card or press `1-9`: play card from hand
 - Click `END TURN` or press `E`: end turn
+- `V`: toggle Core Influence screen
+- `M`: toggle real-world notch mapping text
+- `C`: clear selected forecast card (on Core Influence screen)
 - `N`: go to next world after a world victory
 - `R`: restart run
 
