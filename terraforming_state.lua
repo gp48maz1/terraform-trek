@@ -35,10 +35,26 @@ local DEFAULT_HAZARDS = {
   { name = "Dry Front", deltas = { water = -2, soil = -1 } }
 }
 
+local DEFAULT_INDUSTRY_SLOTS = 4
+
 local function shallow_copy(input)
   local out = {}
   for k, v in pairs(input or {}) do
     out[k] = v
+  end
+  return out
+end
+
+local function copy_damage_rules(rules)
+  local out = {}
+  for _, rule in ipairs(rules or {}) do
+    table.insert(out, {
+      stat = rule.stat,
+      min = rule.min,
+      max = rule.max,
+      damage = rule.damage,
+      reason = rule.reason
+    })
   end
   return out
 end
@@ -85,6 +101,17 @@ local function shuffle_in_place(items)
   end
 end
 
+local function damage_rule_triggers(rule, snapshot)
+  local stat_value = (snapshot and snapshot[rule.stat]) or 0
+  if rule.min and stat_value < rule.min then
+    return false
+  end
+  if rule.max and stat_value > rule.max then
+    return false
+  end
+  return true
+end
+
 function TerraformingState.new(config)
   config = config or {}
   local self = setmetatable({}, TerraformingState)
@@ -103,9 +130,17 @@ function TerraformingState.new(config)
   if self.one_way_stress_threshold <= self.one_way_support_threshold + 1 then
     self.one_way_stress_threshold = self.one_way_support_threshold + 2
   end
+  self.population_good_threshold = config.population_good_threshold or 2
+  self.population_ok_threshold = config.population_ok_threshold or 5
+  if self.population_ok_threshold <= self.population_good_threshold then
+    self.population_ok_threshold = self.population_good_threshold + 1
+  end
+  self.max_industry_slots = config.max_industry_slots or DEFAULT_INDUSTRY_SLOTS
   self.turn = 1
   self.status = "ongoing"
   self.habitability = 0
+  self.population = math.max(0, config.population or 0)
+  self.profit = math.max(0, config.profit or 0)
   self.last_turn_summary = nil
 
   self.stat_bounds = shallow_copy(DEFAULT_STAT_BOUNDS)
@@ -157,6 +192,17 @@ function TerraformingState.new(config)
   end
   shuffle_in_place(self.hazards)
   self.hazard_index = 1
+
+  self.industries = {}
+  for i = 1, self.max_industry_slots do
+    self.industries[i] = nil
+  end
+  for i, industry in ipairs(config.industries or {}) do
+    if i > self.max_industry_slots then
+      break
+    end
+    self.industries[i] = self:create_industry_instance(industry)
+  end
 
   return self
 end
@@ -239,6 +285,197 @@ end
 
 function TerraformingState:adjust_toward_targets(amount)
   return self:adjust_snapshot_toward_targets(self.stats, amount)
+end
+
+function TerraformingState:create_industry_instance(industry_def)
+  local def = industry_def or {}
+  local max_health = math.max(1, def.max_health or def.health or 5)
+  local industry = {
+    id = def.id or "industry",
+    name = def.name or "Industry",
+    base_profit = def.base_profit or 1,
+    population_factor = def.population_factor or 0,
+    max_health = max_health,
+    health = clamp(def.health or max_health, 0, max_health),
+    damage_rules = copy_damage_rules(def.damage_rules or {})
+  }
+  return industry
+end
+
+function TerraformingState:clone_industry(industry)
+  if not industry then
+    return nil
+  end
+  return {
+    id = industry.id,
+    name = industry.name,
+    base_profit = industry.base_profit,
+    population_factor = industry.population_factor,
+    max_health = industry.max_health,
+    health = industry.health,
+    damage_rules = copy_damage_rules(industry.damage_rules or {})
+  }
+end
+
+function TerraformingState:clone_industry_slots(source_slots)
+  local slots = {}
+  for i = 1, self.max_industry_slots do
+    slots[i] = self:clone_industry(source_slots and source_slots[i] or nil)
+  end
+  return slots
+end
+
+function TerraformingState:get_industry_slot_count()
+  return self.max_industry_slots
+end
+
+function TerraformingState:get_open_industry_slots_count(slots)
+  local source = slots or self.industries
+  local open = 0
+  for i = 1, self.max_industry_slots do
+    if not source[i] then
+      open = open + 1
+    end
+  end
+  return open
+end
+
+function TerraformingState:get_economy_snapshot()
+  return {
+    population = self.population,
+    profit = self.profit,
+    industries = self:clone_industry_slots(self.industries)
+  }
+end
+
+function TerraformingState:install_industry_in_slots(industry_def, slots)
+  if not industry_def then
+    return false, nil
+  end
+  local target_slots = slots or self.industries
+  for i = 1, self.max_industry_slots do
+    if not target_slots[i] then
+      target_slots[i] = self:create_industry_instance(industry_def)
+      return true, i
+    end
+  end
+  return false, nil
+end
+
+function TerraformingState:install_industry(industry_def)
+  return self:install_industry_in_slots(industry_def, self.industries)
+end
+
+function TerraformingState:remove_industry(slot_index, slots)
+  local target_slots = slots or self.industries
+  if slot_index < 1 or slot_index > self.max_industry_slots then
+    return false
+  end
+  if not target_slots[slot_index] then
+    return false
+  end
+  target_slots[slot_index] = nil
+  return true
+end
+
+function TerraformingState:replace_industry(slot_index, industry_def, slots)
+  if not industry_def then
+    return false
+  end
+  local target_slots = slots or self.industries
+  if slot_index < 1 or slot_index > self.max_industry_slots then
+    return false
+  end
+  target_slots[slot_index] = self:create_industry_instance(industry_def)
+  return true
+end
+
+function TerraformingState:get_stat_quality(key, value)
+  local target = self.targets[key] or 0
+  local distance = math.abs((value or 0) - target)
+  if distance <= self.population_good_threshold then
+    return "good", 1
+  elseif distance <= self.population_ok_threshold then
+    return "ok", 0
+  end
+  return "bad", -1
+end
+
+function TerraformingState:compute_population_delta(snapshot)
+  local quality = {}
+  local primitive = 0
+  local good_count = 0
+  local base = 1
+
+  for _, key in ipairs(STAT_KEYS) do
+    local grade, score = self:get_stat_quality(key, snapshot[key])
+    quality[key] = grade
+    primitive = primitive + score
+    if grade == "good" then
+      good_count = good_count + 1
+    end
+  end
+
+  local synergy = 0
+  if good_count >= 2 then
+    synergy = math.min(4, good_count)
+  end
+
+  local delta = base + primitive + synergy
+  return delta, {
+    base = base,
+    primitive = primitive,
+    synergy = synergy,
+    good_count = good_count,
+    quality = quality
+  }
+end
+
+function TerraformingState:simulate_industry_phase(snapshot, population, slots)
+  local profit_delta = 0
+  local report = {}
+  for i = 1, self.max_industry_slots do
+    local industry = slots[i]
+    if industry then
+      local damage = 0
+      local reasons = {}
+      for _, rule in ipairs(industry.damage_rules or {}) do
+        if damage_rule_triggers(rule, snapshot) then
+          local rule_damage = rule.damage or 1
+          damage = damage + rule_damage
+          if rule.reason then
+            table.insert(reasons, rule.reason)
+          end
+        end
+      end
+
+      local before_health = industry.health
+      industry.health = clamp(industry.health - damage, 0, industry.max_health)
+      local destroyed = industry.health <= 0
+      local income = 0
+      if not destroyed then
+        local population_bonus = math.floor((population or 0) * (industry.population_factor or 0) + 0.5)
+        income = (industry.base_profit or 0) + population_bonus
+        profit_delta = profit_delta + income
+      else
+        slots[i] = nil
+      end
+
+      report[i] = {
+        empty = false,
+        name = industry.name,
+        before_health = before_health,
+        after_health = industry.health,
+        damage = damage,
+        income = income,
+        destroyed = destroyed,
+        reasons = reasons
+      }
+    else
+      report[i] = { empty = true }
+    end
+  end
+  return profit_delta, report
 end
 
 function TerraformingState:count_in_band_for(snapshot)
@@ -357,6 +594,12 @@ function TerraformingState:forecast_end_turn(base_snapshot, opts)
   local snapshot = shallow_copy(start_snapshot)
   local hazard = opts.hazard or self:get_next_hazard()
   local hazard_strength = opts.hazard_strength or self.hazard_strength
+  local source_economy = opts.economy_state or self:get_economy_snapshot()
+  local economy = {
+    population = math.max(0, source_economy.population or 0),
+    profit = math.max(0, source_economy.profit or 0),
+    industries = self:clone_industry_slots(source_economy.industries)
+  }
 
   local summary = {
     hazard = hazard.name,
@@ -369,7 +612,17 @@ function TerraformingState:forecast_end_turn(base_snapshot, opts)
     growth = 0,
     penalty = 0,
     net = 0,
-    projected_stats = nil
+    projected_stats = nil,
+    population_before = economy.population,
+    population_delta = 0,
+    population_breakdown = nil,
+    projected_population = economy.population,
+    profit_before = economy.profit,
+    profit_delta = 0,
+    projected_profit = economy.profit,
+    projected_industries = nil,
+    industry_report = nil,
+    open_industry_slots = 0
   }
 
   local scaled = make_scaled_deltas(hazard.deltas, hazard_strength)
@@ -396,6 +649,20 @@ function TerraformingState:forecast_end_turn(base_snapshot, opts)
   summary.net = net
   summary.projected_stats = snapshot
 
+  local population_delta, population_breakdown = self:compute_population_delta(snapshot)
+  economy.population = math.max(0, economy.population + population_delta)
+  summary.population_delta = population_delta
+  summary.population_breakdown = population_breakdown
+  summary.projected_population = economy.population
+
+  local profit_delta, industry_report = self:simulate_industry_phase(snapshot, economy.population, economy.industries)
+  economy.profit = math.max(0, economy.profit + profit_delta)
+  summary.profit_delta = profit_delta
+  summary.projected_profit = economy.profit
+  summary.projected_industries = self:clone_industry_slots(economy.industries)
+  summary.industry_report = industry_report
+  summary.open_industry_slots = self:get_open_industry_slots_count(summary.projected_industries)
+
   return summary
 end
 
@@ -408,6 +675,9 @@ function TerraformingState:end_turn()
   summary.turn = self.turn
   self.stats = shallow_copy(summary.projected_stats)
   self.habitability = clamp(self.habitability + summary.net, 0, self.goal)
+  self.population = summary.projected_population or self.population
+  self.profit = summary.projected_profit or self.profit
+  self.industries = self:clone_industry_slots(summary.projected_industries or self.industries)
   self.turn = self.turn + 1
   self:advance_hazard()
 

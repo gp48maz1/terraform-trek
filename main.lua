@@ -502,8 +502,8 @@ end
 local function get_preview_explain_button(layout)
   local rect = layout.cards_rect
   return {
-    x = rect.x + rect.w - 190,
-    y = rect.y + 8,
+    x = rect.x + 12,
+    y = rect.y + rect.h - 30,
     w = 176,
     h = 24
   }
@@ -593,7 +593,7 @@ local function end_turn()
   reset_energy()
 end
 
-local function apply_card_to_snapshot(card, snapshot)
+local function apply_card_to_snapshot(card, snapshot, economy_state)
   if not card then
     return
   end
@@ -602,23 +602,31 @@ local function apply_card_to_snapshot(card, snapshot)
     terraforming_state:apply_stat_changes_to(card.properties.stat_changes or {}, snapshot)
   elseif card.effect_fn_name == "stabilize_system" then
     terraforming_state:adjust_snapshot_toward_targets(snapshot, 1)
+  elseif card.effect_fn_name == "install_industry" then
+    local industry_def = card.properties and card.properties.industry_def
+    if industry_def and economy_state and economy_state.industries then
+      terraforming_state:install_industry_in_slots(industry_def, economy_state.industries)
+    end
   end
 end
 
 local function compute_forecasts(card_index)
-  local base_summary = terraforming_state:forecast_end_turn(terraforming_state.stats)
+  local base_summary = terraforming_state:forecast_end_turn(terraforming_state.stats, {
+    economy_state = terraforming_state:get_economy_snapshot()
+  })
   local scenario = nil
 
   if card_index then
     local card = player_deck.hand[card_index]
     if card then
       local snapshot = copy_stats(terraforming_state.stats)
+      local economy = terraforming_state:get_economy_snapshot()
       local affordable = can_afford(card.cost or 0)
-      apply_card_to_snapshot(card, snapshot)
+      apply_card_to_snapshot(card, snapshot, economy)
       scenario = {
         card = card,
         affordable = affordable,
-        summary = terraforming_state:forecast_end_turn(snapshot)
+        summary = terraforming_state:forecast_end_turn(snapshot, { economy_state = economy })
       }
     end
   end
@@ -633,7 +641,8 @@ local function get_forecast_context()
     local card = player_deck.hand[selected_forecast_card_index]
     if card then
       card_push_snapshot = copy_stats(terraforming_state.stats)
-      apply_card_to_snapshot(card, card_push_snapshot)
+      local card_push_economy = terraforming_state:get_economy_snapshot()
+      apply_card_to_snapshot(card, card_push_snapshot, card_push_economy)
     end
   end
   local active_mode = forecast_mode
@@ -652,13 +661,31 @@ local function get_forecast_context()
     active_summary = scenario.summary
   end
 
+  local current_economy = terraforming_state:get_economy_snapshot()
+  local active_economy = current_economy
+  if active_mode == "do_nothing" then
+    active_economy = {
+      population = baseline.projected_population or current_economy.population,
+      profit = baseline.projected_profit or current_economy.profit,
+      industries = baseline.projected_industries or current_economy.industries or {}
+    }
+  elseif active_mode == "selected" and scenario then
+    active_economy = {
+      population = scenario.summary.projected_population or current_economy.population,
+      profit = scenario.summary.projected_profit or current_economy.profit,
+      industries = scenario.summary.projected_industries or current_economy.industries or {}
+    }
+  end
+
   return {
     baseline = baseline,
     scenario = scenario,
     card_push_snapshot = card_push_snapshot,
     active_mode = active_mode,
     active_snapshot = active_snapshot,
-    active_summary = active_summary
+    active_summary = active_summary,
+    current_economy = current_economy,
+    active_economy = active_economy
   }
 end
 
@@ -678,18 +705,21 @@ end
 
 local function compute_play_recommendations(limit)
   local recommendations = {}
-  local baseline = terraforming_state:forecast_end_turn(terraforming_state.stats)
+  local baseline = terraforming_state:forecast_end_turn(terraforming_state.stats, {
+    economy_state = terraforming_state:get_economy_snapshot()
+  })
   local current_distance = math.abs(terraforming_state.stats[focused_stat] - terraforming_state.targets[focused_stat])
 
   for i, card in ipairs(player_deck.hand) do
     if can_afford(card.cost or 0) then
       local snapshot = copy_stats(terraforming_state.stats)
-      apply_card_to_snapshot(card, snapshot)
-      local summary = terraforming_state:forecast_end_turn(snapshot)
+      local economy = terraforming_state:get_economy_snapshot()
+      apply_card_to_snapshot(card, snapshot, economy)
+      local summary = terraforming_state:forecast_end_turn(snapshot, { economy_state = economy })
       local next_distance = math.abs(summary.projected_stats[focused_stat] - terraforming_state.targets[focused_stat])
       local focus_gain = current_distance - next_distance
       local net_gain = summary.net - baseline.net
-      local score = net_gain * 10 + focus_gain
+      local score = net_gain * 10 + focus_gain + summary.population_delta + math.floor(summary.profit_delta * 0.5)
 
       table.insert(recommendations, {
         index = i,
@@ -904,6 +934,7 @@ end
 local function draw_hud()
   local config = WORLD_CONFIGS[world_index]
   local hazard = terraforming_state:get_next_hazard()
+  local economy = terraforming_state:get_economy_snapshot()
 
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print("World " .. world_index .. "/" .. #WORLD_CONFIGS .. ": " .. config.name .. " (" .. config.tier .. ")", 10, 10)
@@ -915,10 +946,22 @@ local function draw_hud()
   )
   love.graphics.print("Energy: " .. current_energy .. " / " .. max_energy, 10, 50)
   love.graphics.print("Next Hazard: " .. hazard.name .. " (" .. format_delta_list(hazard.deltas) .. ")", 10, 70)
+  love.graphics.print("Population: " .. tostring(economy.population) .. "    Profit: " .. tostring(economy.profit), 10, 90)
   draw_stats()
 
+  local slot_parts = {}
+  for i = 1, terraforming_state:get_industry_slot_count() do
+    local industry = economy.industries[i]
+    if industry then
+      table.insert(slot_parts, tostring(i) .. ":" .. industry.name .. " " .. tostring(industry.health) .. "/" .. tostring(industry.max_health))
+    else
+      table.insert(slot_parts, tostring(i) .. ":Open")
+    end
+  end
+  love.graphics.print("Industry Slots: " .. table.concat(slot_parts, " | "), 10, show_real_world_values and 270 or 210)
+
   if turn_summary then
-    local summary_y = show_real_world_values and 270 or 210
+    local summary_y = show_real_world_values and 320 or 250
     love.graphics.print("Last Turn Hazard: " .. turn_summary.hazard, 10, summary_y)
     love.graphics.print("Hazard Delta: " .. format_delta_list(turn_summary.hazard_deltas), 10, summary_y + 20)
     love.graphics.print("Coupling Delta: " .. format_delta_list(turn_summary.coupling_deltas), 10, summary_y + 40)
@@ -926,6 +969,14 @@ local function draw_hud()
       "Growth " .. turn_summary.growth .. " - Penalty " .. turn_summary.penalty .. " = Net " .. format_signed(turn_summary.net),
       10,
       summary_y + 60
+    )
+    love.graphics.print(
+      "Population " .. format_signed(turn_summary.population_delta or 0) ..
+        " -> " .. tostring(turn_summary.projected_population or terraforming_state.population) ..
+        " | Profit " .. format_signed(turn_summary.profit_delta or 0) ..
+        " -> " .. tostring(turn_summary.projected_profit or terraforming_state.profit),
+      10,
+      summary_y + 80
     )
   end
 
@@ -1139,9 +1190,9 @@ local function draw_influence_nodes(layout, forecast_ctx)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf("Flow: " .. get_edge_filter_label(edge_filter_mode), toggle_buttons.filter.x + 8, toggle_buttons.filter.y + 6, toggle_buttons.filter.w - 12, "left")
 
-  local graph_fill = show_graph_explain and { 0.24, 0.42, 0.26, 0.98 } or { 0.13, 0.18, 0.25, 0.98 }
+  local graph_fill = show_graph_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
   if hovered_graph_explain_button and not show_graph_explain then
-    graph_fill = { 0.18, 0.24, 0.33, 0.98 }
+    graph_fill = { 0.18, 0.24, 0.33, 1 }
   end
   local graph_border = show_graph_explain and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
   love.graphics.setColor(unpack(graph_fill))
@@ -1208,70 +1259,45 @@ local function draw_influence_nodes(layout, forecast_ctx)
   end
 end
 
-local function compute_end_objectives(snapshot)
-  local function normalized_distance_score(key, value)
-    local bounds = terraforming_state:get_stat_bounds(key)
-    local target_value = terraforming_state.targets[key] or 0
-    local worst = math.max(math.abs(bounds.min - target_value), math.abs(bounds.max - target_value))
-    if worst <= 0 then
-      return 1
-    end
-    local distance = math.abs((value or 0) - target_value)
-    return clamp_value(1 - (distance / worst), 0, 1)
+local function get_forecast_mode_label(active_mode)
+  if active_mode == "do_nothing" then
+    return "Do Nothing"
+  elseif active_mode == "selected" then
+    return "Selected Card"
   end
-
-  local heat_score = normalized_distance_score("heat", snapshot.heat)
-  local air_score = normalized_distance_score("air", snapshot.air)
-  local water_score = normalized_distance_score("water", snapshot.water)
-  local soil_score = normalized_distance_score("soil", snapshot.soil)
-
-  local population = math.floor((air_score * 0.42 + water_score * 0.24 + soil_score * 0.34) * terraforming_state.goal + 0.5)
-  local profit = math.floor((heat_score * 0.36 + water_score * 0.34 + soil_score * 0.15 + air_score * 0.15) * terraforming_state.goal + 0.5)
-
-  return population, profit
+  return "Current"
 end
 
-local function get_objective_targets()
-  local population_target = math.floor(terraforming_state.goal * 0.55 + 0.5)
-  local profit_target = terraforming_state.goal - population_target
-  return population_target, profit_target
-end
-
-local function draw_objective_metric(rect, y, label, current_value, active_value, target_value, mode_text)
-  local line_w = rect.w - 28
-  local bar_x = rect.x + 14
-  local bar_y = y + 34
-  local bar_w = line_w
-  local bar_h = 12
-  local progress_now = clamp_value(current_value / math.max(1, target_value), 0, 1)
-  local progress_active = clamp_value(active_value / math.max(1, target_value), 0, 1)
-
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(label .. ": " .. tostring(current_value) .. "/" .. tostring(target_value), rect.x + 14, y, line_w, "left")
-
-  love.graphics.setColor(0.08, 0.1, 0.14, 0.96)
-  love.graphics.rectangle("fill", bar_x, bar_y, bar_w, bar_h, 5, 5)
-  love.graphics.setColor(0.35, 0.66, 0.42, 0.9)
-  love.graphics.rectangle("fill", bar_x + 1, bar_y + 1, math.floor((bar_w - 2) * progress_now), bar_h - 2, 4, 4)
-  love.graphics.setColor(0.48, 0.74, 1.0, 0.95)
-  love.graphics.rectangle("fill", bar_x + 1, bar_y + 1, math.floor((bar_w - 2) * progress_active), math.max(2, math.floor((bar_h - 2) * 0.45)), 4, 4)
-  love.graphics.setColor(0.72, 0.82, 0.96, 1)
-  love.graphics.rectangle("line", bar_x, bar_y, bar_w, bar_h, 5, 5)
-
-  love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf(mode_text .. ": " .. tostring(active_value) .. " (" .. format_signed(active_value - current_value) .. ")", rect.x + 14, y + 52, line_w, "left")
+local function get_quality_code(quality)
+  if quality == "good" then
+    return "G"
+  elseif quality == "ok" then
+    return "O"
+  end
+  return "B"
 end
 
 local function draw_end_objectives_panel(layout, forecast_ctx)
   local rect = layout.objectives_rect
-  local current_population, current_profit = compute_end_objectives(terraforming_state.stats)
-  local active_population, active_profit = compute_end_objectives(forecast_ctx.active_snapshot)
-  local population_target, profit_target = get_objective_targets()
-  local mode_text = "Current"
-  if forecast_ctx.active_mode == "do_nothing" then
-    mode_text = "Do Nothing"
-  elseif forecast_ctx.active_mode == "selected" then
-    mode_text = "Selected Card"
+  local mode_text = get_forecast_mode_label(forecast_ctx.active_mode)
+  local active_summary = forecast_ctx.active_summary
+  local current_population = forecast_ctx.current_economy.population
+  local current_profit = forecast_ctx.current_economy.profit
+  local active_population = forecast_ctx.active_economy.population
+  local active_profit = forecast_ctx.active_economy.profit
+  local active_industries = forecast_ctx.active_economy.industries or {}
+  local population_delta = 0
+  local population_breakdown = nil
+  local profit_delta = 0
+  local industry_report = nil
+
+  if active_summary then
+    population_delta = active_summary.population_delta or 0
+    population_breakdown = active_summary.population_breakdown
+    profit_delta = active_summary.profit_delta or 0
+    industry_report = active_summary.industry_report
+  else
+    population_delta, population_breakdown = terraforming_state:compute_population_delta(terraforming_state.stats)
   end
 
   love.graphics.setColor(0.06, 0.08, 0.12, 0.92)
@@ -1291,21 +1317,87 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
     "left"
   )
 
-  draw_objective_metric(rect, rect.y + 64, "Population", current_population, active_population, population_target, mode_text)
-  draw_objective_metric(rect, rect.y + 140, "Profit", current_profit, active_profit, profit_target, mode_text)
+  local pop_line = "Population: " .. tostring(current_population)
+  if active_summary then
+    pop_line = pop_line .. " -> " .. tostring(active_population) .. " (" .. format_signed(population_delta) .. ")"
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf(pop_line, rect.x + 14, rect.y + 62, rect.w - 28, "left")
+  love.graphics.setColor(0.75, 0.87, 0.95, 1)
+  love.graphics.printf("Reference mode: " .. mode_text, rect.x + 14, rect.y + 80, rect.w - 28, "left")
+
+  if population_breakdown then
+    local q = population_breakdown.quality or {}
+    local quality_line = "Quality (G/O/B): Heat " .. get_quality_code(q.heat) ..
+      "  Air " .. get_quality_code(q.air) ..
+      "  Water " .. get_quality_code(q.water) ..
+      "  Soil " .. get_quality_code(q.soil)
+    love.graphics.printf(quality_line, rect.x + 14, rect.y + 98, rect.w - 28, "left")
+    love.graphics.printf(
+      "Rule: +1 base + primitive " .. format_signed(population_breakdown.primitive or 0) ..
+        " + synergy " .. format_signed(population_breakdown.synergy or 0) ..
+        " = " .. format_signed(population_delta),
+      rect.x + 14,
+      rect.y + 116,
+      rect.w - 28,
+      "left"
+    )
+  end
+
+  local profit_line = "Profit: " .. tostring(current_profit)
+  if active_summary then
+    profit_line = profit_line .. " -> " .. tostring(active_profit) .. " (" .. format_signed(profit_delta) .. ")"
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf(profit_line, rect.x + 14, rect.y + 146, rect.w - 28, "left")
+  love.graphics.setColor(0.75, 0.87, 0.95, 1)
+  love.graphics.printf("Profit comes from installed industries that survive the turn.", rect.x + 14, rect.y + 164, rect.w - 28, "left")
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("Industry Slots (max 4):", rect.x + 14, rect.y + 186, rect.w - 28, "left")
+  local slot_y = rect.y + 206
+  local slot_h = 20
+  for i = 1, terraforming_state:get_industry_slot_count() do
+    local industry = active_industries[i]
+    local text
+    local text_color = { 0.85, 0.9, 0.96, 1 }
+    if industry then
+      text = "[" .. tostring(i) .. "] " .. industry.name ..
+        "  HP " .. tostring(industry.health) .. "/" .. tostring(industry.max_health)
+      if industry_report and industry_report[i] and not industry_report[i].empty then
+        local rep = industry_report[i]
+        if rep.destroyed then
+          text = text .. "  | Destroyed this turn"
+          text_color = { 0.98, 0.55, 0.52, 1 }
+        else
+          text = text .. "  | +" .. tostring(rep.income) .. " profit"
+          if (rep.damage or 0) > 0 then
+            text = text .. ", -" .. tostring(rep.damage) .. " HP"
+            text_color = { 0.95, 0.84, 0.48, 1 }
+          end
+        end
+      else
+        text = text .. "  | Base +" .. tostring(industry.base_profit or 0)
+      end
+    else
+      if industry_report and industry_report[i] and industry_report[i].destroyed then
+        text = "[" .. tostring(i) .. "] Destroyed this turn (slot now open)"
+        text_color = { 0.98, 0.55, 0.52, 1 }
+      else
+        text = "[" .. tostring(i) .. "] Open slot"
+        text_color = { 0.62, 0.72, 0.84, 1 }
+      end
+    end
+    love.graphics.setColor(unpack(text_color))
+    love.graphics.printf(text, rect.x + 14, slot_y, rect.w - 28, "left")
+    slot_y = slot_y + slot_h
+  end
 
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
   love.graphics.printf(
-    "These objectives are strategic gauges for world planning.",
+    "Install Industry cards to fill slots. Slots can be replaced/upgraded later.",
     rect.x + 14,
-    rect.y + rect.h - 56,
-    rect.w - 28,
-    "left"
-  )
-  love.graphics.printf(
-    "Use Explain Graph / Explain Next Turn for detailed mechanics.",
-    rect.x + 14,
-    rect.y + rect.h - 36,
+    rect.y + rect.h - 34,
     rect.w - 28,
     "left"
   )
@@ -1422,6 +1514,8 @@ local function draw_forecast_panel(rect, forecast_ctx)
   local recommendations = compute_play_recommendations(3)
   local focused_target = terraforming_state.targets[focused_stat]
   local mode_buttons = get_forecast_mode_buttons(rect)
+  local current_population = forecast_ctx.current_economy.population
+  local current_profit = forecast_ctx.current_economy.profit
 
   love.graphics.setColor(0.06, 0.08, 0.12, 0.92)
   love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 10, 10)
@@ -1432,7 +1526,7 @@ local function draw_forecast_panel(rect, forecast_ctx)
   love.graphics.printf("End-Turn Forecast", rect.x + 14, rect.y + 12, rect.w - 28, "left")
   love.graphics.printf("Hazard: " .. baseline.hazard, rect.x + 14, rect.y + 34, rect.w - 28, "left")
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf("Map reference mode: " .. (forecast_ctx.active_mode == "current" and "Current" or (forecast_ctx.active_mode == "selected" and "Selected Card" or "Do Nothing")), rect.x + 210, rect.y + 34, rect.w - 224, "left")
+  love.graphics.printf("Map reference mode: " .. get_forecast_mode_label(forecast_ctx.active_mode), rect.x + 210, rect.y + 34, rect.w - 224, "left")
   love.graphics.setColor(1, 1, 1, 1)
 
   for _, button in ipairs(mode_buttons) do
@@ -1478,6 +1572,22 @@ local function draw_forecast_panel(rect, forecast_ctx)
     rect.w * 0.46,
     "left"
   )
+  love.graphics.printf(
+    "Population: " .. tostring(current_population) .. " -> " .. tostring(baseline.projected_population) ..
+      " (" .. format_signed(baseline.population_delta or 0) .. ")",
+    rect.x + 14,
+    left_y + 34,
+    rect.w * 0.46,
+    "left"
+  )
+  love.graphics.printf(
+    "Profit: " .. tostring(current_profit) .. " -> " .. tostring(baseline.projected_profit) ..
+      " (" .. format_signed(baseline.profit_delta or 0) .. ")",
+    rect.x + 14,
+    left_y + 50,
+    rect.w * 0.46,
+    "left"
+  )
 
   if scenario then
     local right_y = rect.y + 102
@@ -1516,11 +1626,27 @@ local function draw_forecast_panel(rect, forecast_ctx)
       rect.w * 0.46 - 12,
       "left"
     )
+    love.graphics.printf(
+      "Population: " .. tostring(current_population) .. " -> " .. tostring(scenario.summary.projected_population) ..
+        " (" .. format_signed(scenario.summary.population_delta or 0) .. ")",
+      split_x + 8,
+      right_y + 34,
+      rect.w * 0.46 - 12,
+      "left"
+    )
+    love.graphics.printf(
+      "Profit: " .. tostring(current_profit) .. " -> " .. tostring(scenario.summary.projected_profit) ..
+        " (" .. format_signed(scenario.summary.profit_delta or 0) .. ")",
+      split_x + 8,
+      right_y + 50,
+      rect.w * 0.46 - 12,
+      "left"
+    )
   else
     love.graphics.printf("Select a card below to preview a one-card outcome.", split_x + 8, rect.y + 102, rect.w * 0.46 - 12, "left")
   end
 
-  local rec_start_y = rect.y + 182
+  local rec_start_y = rect.y + 214
   local usable_height = rect.y + rect.h - rec_start_y - 10
   if usable_height > 18 then
     love.graphics.setColor(0.75, 0.87, 0.95, 1)
@@ -1561,11 +1687,11 @@ local function draw_influence_cards(layout)
   love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 10, 10)
 
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Preview Selector (Do Nothing or card). Use Current above to clear preview.", rect.x + 10, rect.y + 10, rect.w - 220, "left")
+  love.graphics.printf("Preview Selector (Do Nothing or card). Use Current above to clear preview.", rect.x + 10, rect.y + 10, rect.w - 20, "left")
 
-  local turn_fill = show_turn_explain and { 0.24, 0.42, 0.26, 0.98 } or { 0.13, 0.18, 0.25, 0.98 }
+  local turn_fill = show_turn_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
   if hovered_turn_explain_button and not show_turn_explain then
-    turn_fill = { 0.18, 0.24, 0.33, 0.98 }
+    turn_fill = { 0.18, 0.24, 0.33, 1 }
   end
   local turn_border = show_turn_explain and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
   love.graphics.setColor(unpack(turn_fill))

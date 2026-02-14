@@ -14,10 +14,15 @@ The current gameplay prototype is a simple card-driven terraforming system:
 - End-turn coupling rules:
   - Bipolar stats (`Heat`, `Water`) couple when `|value-target| >= 4`
   - One-directional stats (`Air`, `Soil`) emit stress when far below target (`<= target-6`), support near target (`>= target-3`), and are neutral in the middle
+- End objectives:
+  - `Population` is turn-based: `+1 base`, plus per-primitive quality (`bad=-1`, `ok=0`, `good=+1`), plus synergy bonus (`+2/+3/+4` for `2/3/4` good primitives)
+  - `Profit` is industry-driven: installed industries generate income each turn if they survive environmental damage checks
+  - Industry capacity is capped at `4` slots
 - Three sequential worlds: low threat, elite, boss
 - Interactive Core Influence screen:
   - click a primitive to focus incoming/outgoing effects
   - right-side `End Objectives` panel tracks `Population` and `Profit`
+  - industry slot status is shown directly in End Objectives
   - optional `Explain Graph` and `Explain Next Turn` overlays for deep breakdowns
   - preview end-of-turn outcomes (baseline vs selected card)
   - see best immediate playable card recommendations

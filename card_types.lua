@@ -19,6 +19,12 @@ CardTypes.BaseTypes = {
         base_properties = {
             energy_cost = 1
         }
+    },
+    Industry = {
+        category = "Industry",
+        base_properties = {
+            energy_cost = 1
+        }
     }
 }
 
@@ -125,6 +131,50 @@ CardTypes.Cards = {
         properties = {
             stat_changes = {
                 soil = -2
+            }
+        }
+    },
+    hydroponics_array = {
+        id = "hydroponics_array",
+        name = "Hydroponics Array",
+        description = "Install industry: +2 profit/turn, small population scaling.",
+        category = "Industry",
+        cost = 1,
+        effect_fn_name = "install_industry",
+        properties = {
+            industry_def = {
+                id = "hydroponics_array",
+                name = "Hydroponics Array",
+                base_profit = 2,
+                population_factor = 0.05,
+                max_health = 6,
+                damage_rules = {
+                    { stat = "heat", min = 6, damage = 1, reason = "heat stress" },
+                    { stat = "heat", max = -6, damage = 1, reason = "freeze stress" },
+                    { stat = "water", max = -7, damage = 1, reason = "ice lock" }
+                }
+            }
+        }
+    },
+    regolith_mine = {
+        id = "regolith_mine",
+        name = "Regolith Mine",
+        description = "Install industry: +3 profit/turn, vulnerable to harsh conditions.",
+        category = "Industry",
+        cost = 1,
+        effect_fn_name = "install_industry",
+        properties = {
+            industry_def = {
+                id = "regolith_mine",
+                name = "Regolith Mine",
+                base_profit = 3,
+                population_factor = 0,
+                max_health = 7,
+                damage_rules = {
+                    { stat = "water", min = 6, damage = 1, reason = "flooding" },
+                    { stat = "air", max = -8, damage = 1, reason = "air corrosion" },
+                    { stat = "soil", max = -8, damage = 1, reason = "substrate collapse" }
+                }
             }
         }
     },
