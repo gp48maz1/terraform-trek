@@ -19,6 +19,12 @@ CardTypes.BaseTypes = {
         base_properties = {
             energy_cost = 1
         }
+    },
+    Industry = {
+        category = "Industry",
+        base_properties = {
+            energy_cost = 1
+        }
     }
 }
 
@@ -27,7 +33,7 @@ CardTypes.Cards = {
     heat_up = {
         id = "heat_up",
         name = "Solar Mirrors",
-        description = "Heat +2.",
+        description = "Heat +2 (warmer).",
         category = "Terraform",
         cost = 1,
         effect_fn_name = "apply_stat_changes",
@@ -40,7 +46,7 @@ CardTypes.Cards = {
     heat_down = {
         id = "heat_down",
         name = "Orbital Shades",
-        description = "Heat -2.",
+        description = "Heat -2 (cooler).",
         category = "Terraform",
         cost = 1,
         effect_fn_name = "apply_stat_changes",
@@ -53,7 +59,7 @@ CardTypes.Cards = {
     air_up = {
         id = "air_up",
         name = "Atmo Seeding",
-        description = "Air +2.",
+        description = "Air +2 (toward breathable 0).",
         category = "Terraform",
         cost = 1,
         effect_fn_name = "apply_stat_changes",
@@ -66,7 +72,7 @@ CardTypes.Cards = {
     air_down = {
         id = "air_down",
         name = "Carbon Scrub",
-        description = "Air -2.",
+        description = "Air -2 (toward toxic/thin).",
         category = "Terraform",
         cost = 1,
         effect_fn_name = "apply_stat_changes",
@@ -79,7 +85,7 @@ CardTypes.Cards = {
     water_up = {
         id = "water_up",
         name = "Comet Capture",
-        description = "Water +2.",
+        description = "Water +2 (toward steam side).",
         category = "Terraform",
         cost = 1,
         effect_fn_name = "apply_stat_changes",
@@ -92,7 +98,7 @@ CardTypes.Cards = {
     water_down = {
         id = "water_down",
         name = "Drain Basins",
-        description = "Water -2.",
+        description = "Water -2 (toward ice side).",
         category = "Terraform",
         cost = 1,
         effect_fn_name = "apply_stat_changes",
@@ -105,7 +111,7 @@ CardTypes.Cards = {
     soil_up = {
         id = "soil_up",
         name = "Nutrient Dust",
-        description = "Soil +2.",
+        description = "Soil +2 (toward fertile 0).",
         category = "Terraform",
         cost = 1,
         effect_fn_name = "apply_stat_changes",
@@ -118,13 +124,57 @@ CardTypes.Cards = {
     soil_down = {
         id = "soil_down",
         name = "Strip Mine",
-        description = "Soil -2.",
+        description = "Soil -2 (toward sterile).",
         category = "Terraform",
         cost = 1,
         effect_fn_name = "apply_stat_changes",
         properties = {
             stat_changes = {
                 soil = -2
+            }
+        }
+    },
+    hydroponics_array = {
+        id = "hydroponics_array",
+        name = "Hydroponics Array",
+        description = "Install industry: +2 profit/turn, small population scaling.",
+        category = "Industry",
+        cost = 1,
+        effect_fn_name = "install_industry",
+        properties = {
+            industry_def = {
+                id = "hydroponics_array",
+                name = "Hydroponics Array",
+                base_profit = 2,
+                population_factor = 0.05,
+                max_health = 6,
+                damage_rules = {
+                    { stat = "heat", min = 6, damage = 1, reason = "heat stress" },
+                    { stat = "heat", max = -6, damage = 1, reason = "freeze stress" },
+                    { stat = "water", max = -7, damage = 1, reason = "ice lock" }
+                }
+            }
+        }
+    },
+    regolith_mine = {
+        id = "regolith_mine",
+        name = "Regolith Mine",
+        description = "Install industry: +3 profit/turn, vulnerable to harsh conditions.",
+        category = "Industry",
+        cost = 1,
+        effect_fn_name = "install_industry",
+        properties = {
+            industry_def = {
+                id = "regolith_mine",
+                name = "Regolith Mine",
+                base_profit = 3,
+                population_factor = 0,
+                max_health = 7,
+                damage_rules = {
+                    { stat = "water", min = 6, damage = 1, reason = "flooding" },
+                    { stat = "air", max = -8, damage = 1, reason = "air corrosion" },
+                    { stat = "soil", max = -8, damage = 1, reason = "substrate collapse" }
+                }
             }
         }
     },

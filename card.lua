@@ -52,6 +52,8 @@ function Card:draw(x, y)
     category_color = {0.05, 0.55, 0.25}
   elseif self.category == "Chance" then
     category_color = {0.1, 0.35, 0.7}
+  elseif self.category == "Industry" then
+    category_color = {0.58, 0.4, 0.12}
   elseif self.category == "Power" then
     category_color = {0.6, 0.25, 0.1}
   end

@@ -5,12 +5,28 @@ A rogue-like game built in Lua and Love2d inspired by Terraforming Mars.
 
 The current gameplay prototype is a simple card-driven terraforming system:
 
-- Four terraform primitives: `Heat`, `Air`, `Water`, `Soil` (range `-4` to `+4`)
+- Four terraform primitives:
+  - `Heat` and `Water`: range `-10` to `+10` (bipolar; too low or too high are both bad)
+  - `Air` and `Soil`: range `-10` to `0` (one-directional health; `0` is ideal)
 - A target value for each primitive per world
 - One output meter: `Habitability`
 - End-turn hazards (intent shown in the HUD)
-- End-turn coupling rules where extreme stats push other stats
+- End-turn coupling rules:
+  - Bipolar stats (`Heat`, `Water`) couple when `|value-target| >= 4`
+  - One-directional stats (`Air`, `Soil`) emit stress when far below target (`<= target-6`), support near target (`>= target-3`), and are neutral in the middle
+- End objectives:
+  - `Population` is turn-based: `+1 base`, plus per-primitive quality (`bad=-1`, `ok=0`, `good=+1`), plus synergy bonus (`+2/+3/+4` for `2/3/4` good primitives)
+  - `Profit` is industry-driven: installed industries generate income each turn if they survive environmental damage checks
+  - Industry capacity is capped at `4` slots
 - Three sequential worlds: low threat, elite, boss
+- Interactive Core Influence screen:
+  - click a primitive to focus incoming/outgoing effects
+  - right-side `End Objectives` panel uses minimalist Population/Profit graphs plus 4 industry slots
+  - bottom `Explain Objectives` button opens detailed Population/Profit math and industry breakdown
+  - industry slot status is shown directly in End Objectives
+  - optional `Explain Graph` and `Explain Next Turn` overlays for deep breakdowns
+  - preview end-of-turn outcomes (baseline vs selected card)
+  - see best immediate playable card recommendations
 
 ### Flow Diagram
 
@@ -39,6 +55,15 @@ flowchart TD
 
 - Click a card or press `1-9`: play card from hand
 - Click `END TURN` or press `E`: end turn
+- `V`: toggle Core Influence screen
+- `M`: toggle real-world notch mapping text
+- `C`: clear selected forecast card (on Core Influence screen)
+- `I`: cycle influence flow filter (`In + Out`, `Incoming`, `Outgoing`, `All`)
+- `Z/X/P`: set map preview mode (`Current` clears selection / `Do Nothing` / `Selected Card`)
+- On Core Influence, click `Do Nothing` or any card in the bottom selector to set preview source
+- On Core Influence, click `Explain Graph` to open/close primitive and coupling explanations
+- On Core Influence, click `Explain Next Turn` to open/close the forecast breakdown
+- On Core Influence, click `Explain Objectives` (bottom of End Objectives panel) to open/close objective math details
 - `N`: go to next world after a world victory
 - `R`: restart run
 

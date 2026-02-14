@@ -1,18 +1,18 @@
 flowchart TD
     subgraph Core["Core Influence Map (resolved once at End Turn)"]
         direction LR
-        Heat["Heat (-4 to +4)"]
-        Air["Air (-4 to +4)"]
-        Water["Water (-4 to +4)"]
-        Soil["Soil (-4 to +4)"]
+        Heat["Heat (-10 to +10)<br/>0 is ideal"]
+        Air["Air (-10 to 0)<br/>0 is ideal"]
+        Water["Water (-10 to +10)<br/>0 is ideal"]
+        Soil["Soil (-10 to 0)<br/>0 is ideal"]
 
-        Heat -->|"if abs(Heat)>=3: Water += -sign(Heat)"| Water
-        Heat -->|"if abs(Heat)>=3: Soil += -sign(Heat)"| Soil
-        Air -->|"if abs(Air)>=3: Heat += sign(Air)"| Heat
-        Air -->|"if abs(Air)>=3: Water += sign(Air)"| Water
-        Water -->|"if abs(Water)>=3: Soil += sign(Water)"| Soil
-        Water -->|"if abs(Water)>=3: Air += sign(Water)"| Air
-        Soil -->|"if abs(Soil)>=3: Air += sign(Soil)"| Air
+        Heat -->|"if abs(Heat)>=5: Water += -sign(Heat)"| Water
+        Heat -->|"if abs(Heat)>=5: Soil += -sign(Heat)"| Soil
+        Air -->|"if abs(Air)>=5: Heat += sign(Air)"| Heat
+        Air -->|"if abs(Air)>=5: Water += sign(Air)"| Water
+        Water -->|"if abs(Water)>=5: Soil += sign(Water)"| Soil
+        Water -->|"if abs(Water)>=5: Air += sign(Water)"| Air
+        Soil -->|"if abs(Soil)>=5: Air += sign(Soil)"| Air
     end
 
     subgraph Turn["Turn Sequence"]

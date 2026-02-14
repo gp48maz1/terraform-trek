@@ -34,4 +34,24 @@ function CardEffects.stabilize_system(context)
   terraforming_state:adjust_toward_targets(1)
 end
 
+function CardEffects.install_industry(context)
+  local card = context.card
+  local terraforming_state = context.terraforming_state
+  if not terraforming_state then
+    print("Warning: Missing terraforming_state in card context.")
+    return
+  end
+
+  local industry_def = (card.properties and card.properties.industry_def) or nil
+  if not industry_def then
+    print("Warning: Missing industry_def on card '" .. tostring(card.name) .. "'.")
+    return
+  end
+
+  local installed = terraforming_state:install_industry(industry_def)
+  if not installed then
+    print("Industry slots are full. Could not install '" .. tostring(industry_def.name or card.name) .. "'.")
+  end
+end
+
 return CardEffects

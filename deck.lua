@@ -24,10 +24,11 @@ function Deck:create_starter_deck()
 
   -- Starter deck tuned for bidirectional control on 4 terraform stats.
   local starter_card_ids = {
-    'heat_up', 'heat_up', 'heat_down',
+    'heat_up', 'heat_down',
     'air_up', 'air_down',
-    'water_up', 'water_up', 'water_down',
+    'water_up', 'water_down',
     'soil_up', 'soil_down',
+    'hydroponics_array', 'regolith_mine',
     'stabilize', 'survey'
   }
 
