@@ -49,6 +49,9 @@ flowchart TD
 - `V`: toggle Core Influence screen
 - `M`: toggle real-world notch mapping text
 - `C`: clear selected forecast card (on Core Influence screen)
+- `I`: cycle influence flow filter (`Focused`, `Incoming`, `Outgoing`, `All`)
+- `O`: toggle edge color meaning (`Current Impact` vs `Rule Type`)
+- `Z/X/P`: set map preview mode (`Current` / `Do Nothing` / `Selected Card`)
 - `N`: go to next world after a world victory
 - `R`: restart run
 
