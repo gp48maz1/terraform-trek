@@ -12,12 +12,13 @@ The current gameplay prototype is a simple card-driven terraforming system:
 - One output meter: `Habitability`
 - End-turn hazards (intent shown in the HUD)
 - End-turn coupling rules:
-  - Bipolar stats (`Heat`, `Water`) couple when `|value-target| >= 3`
-  - One-directional stats (`Air`, `Soil`) emit stress when far below target (`<= target-3`) and support near target (`>= target-2`)
+  - Bipolar stats (`Heat`, `Water`) couple when `|value-target| >= 4`
+  - One-directional stats (`Air`, `Soil`) emit stress when far below target (`<= target-6`), support near target (`>= target-3`), and are neutral in the middle
 - Three sequential worlds: low threat, elite, boss
 - Interactive Core Influence screen:
   - click a primitive to focus incoming/outgoing effects
-  - see trigger threshold status and current coupling impact
+  - right-side `End Objectives` panel tracks `Population` and `Profit`
+  - optional `Explain Graph` and `Explain Next Turn` overlays for deep breakdowns
   - preview end-of-turn outcomes (baseline vs selected card)
   - see best immediate playable card recommendations
 
@@ -54,6 +55,8 @@ flowchart TD
 - `I`: cycle influence flow filter (`In + Out`, `Incoming`, `Outgoing`, `All`)
 - `Z/X/P`: set map preview mode (`Current` clears selection / `Do Nothing` / `Selected Card`)
 - On Core Influence, click `Do Nothing` or any card in the bottom selector to set preview source
+- On Core Influence, click `Explain Graph` to open/close primitive and coupling explanations
+- On Core Influence, click `Explain Next Turn` to open/close the forecast breakdown
 - `N`: go to next world after a world victory
 - `R`: restart run
 
