@@ -184,6 +184,16 @@ local function format_signed(value)
   return tostring(value)
 end
 
+local function clamp_value(value, min_value, max_value)
+  if value < min_value then
+    return min_value
+  end
+  if value > max_value then
+    return max_value
+  end
+  return value
+end
+
 local function point_in_rect(px, py, rx, ry, rw, rh)
   return px >= rx and px <= rx + rw and py >= ry and py <= ry + rh
 end
@@ -592,6 +602,14 @@ end
 
 local function get_forecast_context()
   local baseline, scenario = compute_forecasts(selected_forecast_card_index)
+  local card_push_snapshot = nil
+  if selected_forecast_card_index then
+    local card = player_deck.hand[selected_forecast_card_index]
+    if card then
+      card_push_snapshot = copy_stats(terraforming_state.stats)
+      apply_card_to_snapshot(card, card_push_snapshot)
+    end
+  end
   local active_mode = forecast_mode
 
   if active_mode == "selected" and not scenario then
@@ -611,6 +629,7 @@ local function get_forecast_context()
   return {
     baseline = baseline,
     scenario = scenario,
+    card_push_snapshot = card_push_snapshot,
     active_mode = active_mode,
     active_snapshot = active_snapshot,
     active_summary = active_summary
@@ -1044,6 +1063,9 @@ local function draw_stat_track(map_rect, node, stat_key, current_value, preview_
     track_y = min_track_y
   end
   local current_x = value_to_track_x(bounds, current_value, track_x, track_w)
+  local marker_min_x = track_x + 5
+  local marker_max_x = track_x + track_w - 5
+  current_x = clamp_value(current_x, marker_min_x, marker_max_x)
   local max_distance = math.max(math.abs(bounds.min - target_value), math.abs(bounds.max - target_value))
   if max_distance < 1 then
     max_distance = 1
@@ -1070,11 +1092,12 @@ local function draw_stat_track(map_rect, node, stat_key, current_value, preview_
 
   if preview_value then
     local preview_x = value_to_track_x(bounds, preview_value, track_x, track_w)
-    local preview_y = marker_y
-    if math.abs(preview_x - current_x) < 6 then
-      preview_y = marker_y + 11
+    preview_x = clamp_value(preview_x, marker_min_x, marker_max_x)
+    if math.abs(preview_x - current_x) < 3 then
+      draw_diamond(preview_x, marker_y, 7, { 0.25, 0.48, 0.66, 0.15 }, { 0.45, 0.78, 1.0, 1 })
+    else
+      draw_diamond(preview_x, marker_y, 5, { 0.45, 0.78, 1.0, 1 }, { 0.05, 0.08, 0.12, 1 })
     end
-    draw_diamond(preview_x, preview_y, 5, { 0.45, 0.78, 1.0, 1 }, { 0.05, 0.08, 0.12, 1 })
   end
 end
 
@@ -1119,7 +1142,7 @@ local function draw_influence_nodes(layout, forecast_ctx)
   love.graphics.print("current", map_rect.x + 30, marker_legend_y - 6)
   draw_diamond(map_rect.x + 124, marker_legend_y + 1, 5, { 0.45, 0.78, 1.0, 1 }, { 0.05, 0.08, 0.12, 1 })
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("preview", map_rect.x + 136, marker_legend_y - 6)
+  love.graphics.print("preview (card push)", map_rect.x + 136, marker_legend_y - 6)
 
   for _, edge in ipairs(INFLUENCE_EDGES) do
     if edge_is_visible(edge) then
@@ -1134,7 +1157,10 @@ local function draw_influence_nodes(layout, forecast_ctx)
     local node = layout.nodes[key]
     local value = snapshot[key]
     local current_value = terraforming_state.stats[key]
-    local preview_value = (forecast_ctx.active_mode == "selected") and snapshot[key] or nil
+    local preview_value = nil
+    if forecast_ctx.active_mode == "selected" and forecast_ctx.card_push_snapshot then
+      preview_value = forecast_ctx.card_push_snapshot[key]
+    end
     local status, color = get_stat_status(key, value)
     local is_focused = key == focused_stat
     local is_hovered = key == hovered_influence_stat
@@ -1463,7 +1489,7 @@ local function draw_influence_screen()
 
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print("Core Influence Map (V)", 16, 12)
-  love.graphics.print("Click primitive to focus. Arrows show current coupling impact only.", 16, 32)
+  love.graphics.print("Click primitive to focus. Arrows show current coupling; blue marker shows card push.", 16, 32)
   love.graphics.print("M mapping, C clear card, I flow, Z current, X do nothing, P selected card, V gameplay.", 16, 52)
 
   draw_influence_nodes(layout, forecast_ctx)
