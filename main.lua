@@ -1434,6 +1434,36 @@ local function fit_single_line(text, max_width)
   return trimmed .. suffix
 end
 
+local function calculate_profit_flow_totals(active_industries, profit_breakdown, population_value, slot_count)
+  local base_total = 0
+  local pop_bonus_total = 0
+  local income_total = 0
+
+  for i = 1, slot_count do
+    local industry = active_industries[i]
+    if industry then
+      local base_income = industry.base_profit or 0
+      local income = nil
+      if profit_breakdown and profit_breakdown.terms and profit_breakdown.terms[i] then
+        income = profit_breakdown.terms[i].income
+      end
+      if income == nil then
+        local pop_bonus = math.floor((population_value or 0) * (industry.population_factor or 0) + 0.5)
+        income = base_income + pop_bonus
+      end
+      base_total = base_total + base_income
+      pop_bonus_total = pop_bonus_total + (income - base_income)
+      income_total = income_total + income
+    end
+  end
+
+  return {
+    base_total = base_total,
+    pop_bonus_total = pop_bonus_total,
+    income_total = income_total
+  }
+end
+
 local function draw_end_objectives_explain_overlay(
   rect,
   mode_text,
@@ -1688,6 +1718,8 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
   local profit_delta = active_summary and (active_summary.profit_delta or 0) or 0
   local industry_report = active_summary and active_summary.industry_report or nil
   local profit_breakdown = build_profit_snapshot_breakdown(active_summary, slot_count)
+  local profit_flow = calculate_profit_flow_totals(active_industries, profit_breakdown, active_population, slot_count)
+  local projected_profit_gain = profit_breakdown and profit_delta or profit_flow.income_total
 
   local explain_button = get_objectives_explain_button(layout)
 
@@ -1740,40 +1772,65 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
   draw_end_objective_metric_graph(rect, bars_y, "Population", current_population, active_population, { 0.35, 0.66, 0.42 })
   draw_end_objective_metric_graph(rect, bars_y + 48, "Profit", current_profit, active_profit, { 0.66, 0.56, 0.24 })
 
-  local math_y = bars_y + 92
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(
-    "Pop math (" .. mode_text .. "): d = +1 + " .. format_signed(active_breakdown.primitive) ..
-      " + " .. format_signed(active_breakdown.synergy) .. " = " .. format_signed(population_delta) ..
-      " | " .. tostring(current_population) .. " -> " .. tostring(active_population),
-    rect.x + 14,
-    math_y,
-    rect.w - 28,
-    "left"
-  )
-  if profit_breakdown then
-    love.graphics.printf(
-      "Profit math: d = " .. format_signed(profit_breakdown.total) ..
-        " | " .. tostring(current_profit) .. " -> " .. tostring(active_profit),
-      rect.x + 14,
-      math_y + 16,
-      rect.w - 28,
-      "left"
-    )
-  else
-    love.graphics.printf(
-      "Profit math: choose Do Nothing or a card to project slot terms.",
-      rect.x + 14,
-      math_y + 16,
-      rect.w - 28,
-      "left"
-    )
+  local flow_title_y = bars_y + 90
+  love.graphics.setColor(0.75, 0.87, 0.95, 1)
+  love.graphics.printf("Profit Flow", rect.x + 14, flow_title_y, rect.w - 28, "left")
+
+  local flow_gap = 8
+  local flow_box_w = math.floor((rect.w - 28 - (flow_gap * 2)) / 3)
+  local flow_box_h = 40
+  local flow_y = flow_title_y + 16
+  local flow_x = rect.x + 14
+
+  local flow_labels = {
+    {
+      title = "Population Bonus",
+      value = format_signed(profit_flow.pop_bonus_total)
+    },
+    {
+      title = "Industry Base",
+      value = format_signed(profit_flow.base_total)
+    },
+    {
+      title = "Projected Profit Gain",
+      value = format_signed(projected_profit_gain)
+    }
+  }
+
+  for i, item in ipairs(flow_labels) do
+    local box_x = flow_x + ((i - 1) * (flow_box_w + flow_gap))
+    local fill = { 0.12, 0.16, 0.22, 1 }
+    local border = { 0.58, 0.72, 0.9, 1 }
+    if i == 3 then
+      fill = item.value:sub(1, 1) == "-" and { 0.24, 0.13, 0.13, 1 } or { 0.12, 0.23, 0.15, 1 }
+      border = item.value:sub(1, 1) == "-" and { 0.9, 0.5, 0.45, 1 } or { 0.62, 0.9, 0.6, 1 }
+    end
+    love.graphics.setColor(unpack(fill))
+    love.graphics.rectangle("fill", box_x, flow_y, flow_box_w, flow_box_h, 7, 7)
+    love.graphics.setColor(unpack(border))
+    love.graphics.rectangle("line", box_x, flow_y, flow_box_w, flow_box_h, 7, 7)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.printf(item.title, box_x + 6, flow_y + 7, flow_box_w - 12, "center")
+    love.graphics.printf(item.value, box_x + 6, flow_y + 22, flow_box_w - 12, "center")
+  end
+
+  for i = 1, 2 do
+    local left_x = flow_x + (i * flow_box_w) + ((i - 1) * flow_gap)
+    local right_x = left_x + flow_gap
+    local arrow_y = flow_y + math.floor(flow_box_h * 0.5)
+    love.graphics.setColor(0.72, 0.82, 0.96, 1)
+    love.graphics.setLineWidth(2)
+    love.graphics.line(left_x + 2, arrow_y, right_x - 8, arrow_y)
+    love.graphics.polygon("fill", right_x - 8, arrow_y - 4, right_x - 8, arrow_y + 4, right_x - 2, arrow_y)
+    love.graphics.setLineWidth(1)
   end
 
   local slot_gap = 8
   local slot_w = math.floor((rect.w - 28 - ((slot_count - 1) * slot_gap)) / slot_count)
-  local slot_y = math_y + 42
-  local slot_h = math.max(44, math.min(54, explain_button.y - 8 - slot_y))
+  local slot_h = 44
+  local slot_target_y = flow_y + flow_box_h + 30
+  local slot_max_y = explain_button.y - 8 - slot_h
+  local slot_y = math.min(slot_target_y, slot_max_y)
 
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf("Industry Slots (income per turn)", rect.x + 14, slot_y - 18, rect.w - 28, "left")
@@ -1807,19 +1864,25 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
 
     love.graphics.setColor(1, 1, 1, 1)
     if industry then
+      local base_income = industry.base_profit or 0
       local income_value
       if term and term.income ~= nil then
         income_value = term.income
       else
         local pop_bonus = math.floor((active_population or current_population) * (industry.population_factor or 0) + 0.5)
-        income_value = (industry.base_profit or 0) + pop_bonus
+        income_value = base_income + pop_bonus
       end
+      local pop_bonus_value = income_value - base_income
       local name_text = industry.name
       if #name_text > 18 then
         name_text = string.sub(name_text, 1, 17) .. "..."
       end
       local line_1 = fit_single_line(tostring(i) .. ". " .. name_text, slot_w - 12)
-      local line_2 = fit_single_line("Income " .. format_signed(income_value) .. " / turn | HP " .. tostring(industry.health) .. "/" .. tostring(industry.max_health), slot_w - 12)
+      local line_2 = fit_single_line(
+        "Inc " .. format_signed(income_value) .. "/turn (B " ..
+          format_signed(base_income) .. ", P " .. format_signed(pop_bonus_value) .. ")",
+        slot_w - 12
+      )
       love.graphics.printf(line_1, slot_x + 6, slot_y + 8, slot_w - 12, "left")
       love.graphics.printf(line_2, slot_x + 6, slot_y + 28, slot_w - 12, "left")
     else
