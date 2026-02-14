@@ -403,9 +403,9 @@ local function get_influence_layout()
   }
 
   local map_center_x = map_rect.x + math.floor(map_rect.w * 0.5)
-  local map_center_y = map_rect.y + math.floor(map_rect.h * 0.56)
+  local map_center_y = map_rect.y + math.floor(map_rect.h * 0.6)
   local offset_x = math.floor(map_rect.w * 0.29)
-  local offset_y = math.floor(map_rect.h * 0.26)
+  local offset_y = math.floor(map_rect.h * 0.24)
   local node_radius = math.max(48, math.floor(math.min(map_rect.w, map_rect.h) * 0.11))
 
   local nodes = {
@@ -1008,49 +1008,73 @@ local function value_to_track_x(bounds, value, x, w)
   return x + t * w
 end
 
-local function draw_stat_track(node, stat_key, current_value, preview_value, target_value)
+local function lerp(a, b, t)
+  return a + (b - a) * t
+end
+
+local function draw_diamond(x, y, size, fill_color, border_color)
+  love.graphics.setColor(unpack(fill_color))
+  love.graphics.polygon(
+    "fill",
+    x, y - size,
+    x + size, y,
+    x, y + size,
+    x - size, y
+  )
+  if border_color then
+    love.graphics.setColor(unpack(border_color))
+    love.graphics.polygon(
+      "line",
+      x, y - size,
+      x + size, y,
+      x, y + size,
+      x - size, y
+    )
+  end
+end
+
+local function draw_stat_track(map_rect, node, stat_key, current_value, preview_value, target_value)
   local bounds = terraforming_state:get_stat_bounds(stat_key)
   local track_w = math.floor(node.r * 1.6)
   local track_h = 12
   local track_x = math.floor(node.x - (track_w * 0.5))
-  local track_y = math.floor(node.y - node.r - 24)
+  local track_y = math.floor(node.y - node.r - 20)
+  local min_track_y = map_rect.y + 86
+  if track_y < min_track_y then
+    track_y = min_track_y
+  end
   local current_x = value_to_track_x(bounds, current_value, track_x, track_w)
-  local target_x = value_to_track_x(bounds, target_value, track_x, track_w)
+  local max_distance = math.max(math.abs(bounds.min - target_value), math.abs(bounds.max - target_value))
+  if max_distance < 1 then
+    max_distance = 1
+  end
 
   love.graphics.setColor(0.08, 0.1, 0.14, 0.96)
   love.graphics.rectangle("fill", track_x, track_y, track_w, track_h, 4, 4)
+  for i = 0, track_w - 1 do
+    local t = i / math.max(1, track_w - 1)
+    local value = bounds.min + (bounds.max - bounds.min) * t
+    local severity = math.min(1, math.abs(value - target_value) / max_distance)
+    local r = lerp(0.12, 0.8, severity)
+    local g = lerp(0.42, 0.16, severity)
+    local b = lerp(0.14, 0.18, severity)
+    love.graphics.setColor(r, g, b, 0.95)
+    love.graphics.rectangle("fill", track_x + i, track_y + 2, 1, track_h - 4)
+  end
+
   love.graphics.setColor(0.58, 0.67, 0.78, 0.95)
   love.graphics.rectangle("line", track_x, track_y, track_w, track_h, 4, 4)
 
-  local shade_x = math.min(current_x, target_x)
-  local shade_w = math.abs(target_x - current_x)
-  if shade_w > 0.5 then
-    love.graphics.setColor(0.26, 0.64, 0.34, 0.75)
-    love.graphics.rectangle("fill", shade_x, track_y + 2, shade_w, track_h - 4, 2, 2)
-  end
+  local marker_y = track_y + math.floor(track_h * 0.5)
+  draw_diamond(current_x, marker_y, 5, { 1, 1, 1, 1 }, { 0.05, 0.08, 0.12, 1 })
 
-  love.graphics.setColor(0.86, 0.9, 0.96, 0.95)
-  love.graphics.line(target_x, track_y - 2, target_x, track_y + track_h + 2)
-
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.polygon(
-    "fill",
-    current_x, track_y - 5,
-    current_x + 5, track_y,
-    current_x, track_y + 5,
-    current_x - 5, track_y
-  )
-
-  if preview_value and math.abs(preview_value - current_value) > 0.001 then
+  if preview_value then
     local preview_x = value_to_track_x(bounds, preview_value, track_x, track_w)
-    love.graphics.setColor(0.45, 0.78, 1.0, 1)
-    love.graphics.polygon(
-      "fill",
-      preview_x, track_y + track_h - 1,
-      preview_x + 5, track_y + track_h + 4,
-      preview_x, track_y + track_h + 9,
-      preview_x - 5, track_y + track_h + 4
-    )
+    local preview_y = marker_y
+    if math.abs(preview_x - current_x) < 6 then
+      preview_y = marker_y + 11
+    end
+    draw_diamond(preview_x, preview_y, 5, { 0.45, 0.78, 1.0, 1 }, { 0.05, 0.08, 0.12, 1 })
   end
 end
 
@@ -1089,18 +1113,13 @@ local function draw_influence_nodes(layout, forecast_ctx)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print("0 inactive", map_rect.x + 304, map_rect.y + 51)
 
-  local white_dx = map_rect.x + 402
-  local blue_dx = map_rect.x + 528
-  local diamond_y = map_rect.y + 58
+  local marker_legend_y = map_rect.y + 68
+  draw_diamond(map_rect.x + 18, marker_legend_y + 1, 5, { 1, 1, 1, 1 }, { 0.05, 0.08, 0.12, 1 })
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.polygon("fill", white_dx, diamond_y - 6, white_dx + 6, diamond_y, white_dx, diamond_y + 6, white_dx - 6, diamond_y)
+  love.graphics.print("current", map_rect.x + 30, marker_legend_y - 6)
+  draw_diamond(map_rect.x + 124, marker_legend_y + 1, 5, { 0.45, 0.78, 1.0, 1 }, { 0.05, 0.08, 0.12, 1 })
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("current notch", white_dx + 11, map_rect.y + 51)
-
-  love.graphics.setColor(0.45, 0.78, 1.0, 1)
-  love.graphics.polygon("fill", blue_dx, diamond_y - 6, blue_dx + 6, diamond_y, blue_dx, diamond_y + 6, blue_dx - 6, diamond_y)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("selected-card notch", blue_dx + 11, map_rect.y + 51)
+  love.graphics.print("preview", map_rect.x + 136, marker_legend_y - 6)
 
   for _, edge in ipairs(INFLUENCE_EDGES) do
     if edge_is_visible(edge) then
@@ -1120,7 +1139,7 @@ local function draw_influence_nodes(layout, forecast_ctx)
     local is_focused = key == focused_stat
     local is_hovered = key == hovered_influence_stat
 
-    draw_stat_track(node, key, current_value, preview_value, terraforming_state.targets[key])
+    draw_stat_track(map_rect, node, key, current_value, preview_value, terraforming_state.targets[key])
 
     love.graphics.setColor(0.08, 0.1, 0.14, 0.95)
     love.graphics.circle("fill", node.x, node.y, node.r)
