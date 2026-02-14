@@ -414,7 +414,7 @@ local function get_influence_layout()
   local map_rect = {
     x = 20,
     y = 96,
-    w = math.floor(sw * 0.53),
+    w = math.floor(sw * 0.51),
     h = math.floor(sh * 0.56)
   }
 
@@ -1692,50 +1692,42 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
   draw_end_objective_metric_graph(rect, rect.y + 56, "Population", current_population, active_population, { 0.35, 0.66, 0.42 })
   draw_end_objective_metric_graph(rect, rect.y + 104, "Profit", current_profit, active_profit, { 0.66, 0.56, 0.24 })
 
-  love.graphics.setColor(0.75, 0.87, 0.95, 1)
+  love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf(
-    "Snapshot Equations (" .. mode_text .. ")",
+    "Pop math (" .. mode_text .. "): d = +1 + " .. format_signed(active_breakdown.primitive) ..
+      " + " .. format_signed(active_breakdown.synergy) .. " = " .. format_signed(population_delta) ..
+      " | " .. tostring(current_population) .. " -> " .. tostring(active_population),
     rect.x + 14,
     rect.y + 146,
     rect.w - 28,
     "left"
   )
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(
-    "Population: Δ = +1 + " .. format_signed(active_breakdown.primitive) ..
-      " + " .. format_signed(active_breakdown.synergy) .. " = " .. format_signed(population_delta) ..
-      " | " .. tostring(current_population) .. " -> " .. tostring(active_population),
-    rect.x + 14,
-    rect.y + 162,
-    rect.w - 28,
-    "left"
-  )
   if profit_breakdown then
     love.graphics.printf(
-      "Profit: Δ = " .. table.concat(profit_breakdown.term_text, " + ") ..
+      "Profit math: d = " .. table.concat(profit_breakdown.term_text, " + ") ..
         " = " .. format_signed(profit_breakdown.total) ..
         " | " .. tostring(current_profit) .. " -> " .. tostring(active_profit),
       rect.x + 14,
-      rect.y + 178,
+      rect.y + 162,
       rect.w - 28,
       "left"
     )
   else
     love.graphics.printf(
-      "Profit: choose Do Nothing or a card to project slot income terms.",
+      "Profit math: choose Do Nothing or a card to project slot terms.",
       rect.x + 14,
-      rect.y + 178,
+      rect.y + 162,
       rect.w - 28,
       "left"
     )
   end
 
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf("Primitive Status Scores (-1 / 0 / +1)", rect.x + 14, rect.y + 198, rect.w - 28, "left")
+  love.graphics.printf("Primitive Status (-1 / 0 / +1)", rect.x + 14, rect.y + 186, rect.w - 28, "left")
   local tile_gap = 8
   local tile_w = math.floor((rect.w - 28 - (tile_gap * 3)) / 4)
-  local tile_h = 56
-  local tile_y = rect.y + 216
+  local tile_h = 52
+  local tile_y = rect.y + 204
   for i, key in ipairs(STAT_ORDER) do
     local tile_x = rect.x + 14 + ((i - 1) * (tile_w + tile_gap))
     local current_score = current_breakdown.scores[key]
@@ -1748,21 +1740,21 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
     love.graphics.rectangle("line", tile_x, tile_y, tile_w, tile_h, 8, 8)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.printf(STAT_LABELS[key], tile_x + 6, tile_y + 5, tile_w - 12, "center")
-    love.graphics.printf("Score " .. format_signed(active_score) .. " " .. get_quality_label(active_quality), tile_x + 6, tile_y + 22, tile_w - 12, "center")
-    local score_text = "Cur " .. format_signed(current_score)
+    love.graphics.printf("Now " .. format_signed(active_score) .. " " .. get_quality_label(active_quality), tile_x + 6, tile_y + 20, tile_w - 12, "center")
+    local score_text = "From " .. format_signed(current_score)
     if active_score ~= current_score then
       score_text = score_text .. " -> " .. format_signed(active_score)
     end
-    love.graphics.printf(score_text, tile_x + 6, tile_y + 39, tile_w - 12, "center")
+    love.graphics.printf(score_text, tile_x + 6, tile_y + 35, tile_w - 12, "center")
   end
 
   local slot_gap = 8
   local slot_w = math.floor((rect.w - 28 - ((slot_count - 1) * slot_gap)) / slot_count)
-  local slot_h = 56
-  local slot_y = rect.y + 286
+  local slot_h = 48
+  local slot_y = rect.y + 276
 
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Industry Slots (per-slot profit term)", rect.x + 14, slot_y - 20, rect.w - 28, "left")
+  love.graphics.printf("Industry Slots (slot profit term)", rect.x + 14, slot_y - 18, rect.w - 28, "left")
   for i = 1, terraforming_state:get_industry_slot_count() do
     local slot_x = rect.x + 14 + ((i - 1) * (slot_w + slot_gap))
     local industry = active_industries[i]
@@ -1792,20 +1784,25 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
     love.graphics.rectangle("line", slot_x, slot_y, slot_w, slot_h, 8, 8)
 
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf(tostring(i), slot_x + 6, slot_y + 4, slot_w - 12, "left")
     if industry then
       local name_text = industry.name
       if #name_text > 18 then
         name_text = string.sub(name_text, 1, 17) .. "..."
       end
-      love.graphics.printf(name_text, slot_x + 6, slot_y + 16, slot_w - 12, "center")
-      love.graphics.printf("HP " .. tostring(industry.health) .. "/" .. tostring(industry.max_health), slot_x + 6, slot_y + 30, slot_w - 12, "center")
-      love.graphics.printf("Δ$ " .. (term and format_signed(term.income or 0) or "?"), slot_x + 6, slot_y + 43, slot_w - 12, "center")
+      love.graphics.printf(tostring(i) .. ". " .. name_text, slot_x + 6, slot_y + 8, slot_w - 12, "left")
+      love.graphics.printf(
+        "HP " .. tostring(industry.health) .. "/" .. tostring(industry.max_health) ..
+          " | d$ " .. (term and format_signed(term.income or 0) or "?"),
+        slot_x + 6,
+        slot_y + 26,
+        slot_w - 12,
+        "center"
+      )
     else
       local destroyed = industry_report and industry_report[i] and industry_report[i].destroyed
       love.graphics.setColor(destroyed and 0.98 or 0.75, destroyed and 0.55 or 0.87, destroyed and 0.52 or 0.95, 1)
-      love.graphics.printf(destroyed and "Destroyed" or "Open", slot_x + 6, slot_y + 22, slot_w - 12, "center")
-      love.graphics.printf("Δ$ 0", slot_x + 6, slot_y + 43, slot_w - 12, "center")
+      love.graphics.printf(tostring(i) .. ". " .. (destroyed and "Destroyed" or "Open"), slot_x + 6, slot_y + 12, slot_w - 12, "left")
+      love.graphics.printf("d$ 0", slot_x + 6, slot_y + 28, slot_w - 12, "center")
     end
   end
 
