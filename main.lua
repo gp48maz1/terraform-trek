@@ -115,6 +115,7 @@ local forecast_mode = "current" -- current | do_nothing | selected
 local edge_filter_mode = "focused_both" -- focused_both | focused_incoming | focused_outgoing | all
 local show_graph_explain = false
 local show_turn_explain = false
+local show_objectives_explain = false
 
 local hovered_card_index = nil
 local hovered_draw_pile = false
@@ -126,6 +127,7 @@ local hovered_edge_filter_button = false
 local hovered_forecast_mode = nil
 local hovered_graph_explain_button = false
 local hovered_turn_explain_button = false
+local hovered_objectives_explain_button = false
 
 local max_energy = 3
 local current_energy = 0
@@ -509,6 +511,16 @@ local function get_preview_explain_button(layout)
   }
 end
 
+local function get_objectives_explain_button(layout)
+  local rect = layout.objectives_rect
+  return {
+    x = rect.x + 14,
+    y = rect.y + rect.h - 34,
+    w = 188,
+    h = 24
+  }
+end
+
 local function get_influence_card_rects(layout)
   local rows = {}
   local options = {
@@ -555,6 +567,7 @@ local function setup_world(index)
   edge_filter_mode = "focused_both"
   show_graph_explain = false
   show_turn_explain = false
+  show_objectives_explain = false
 
   player_deck:create_starter_deck()
   player_deck:draw(5)
@@ -1277,6 +1290,144 @@ local function get_quality_code(quality)
   return "B"
 end
 
+local function draw_end_objective_metric_graph(rect, y, label, current_value, active_value, bar_color)
+  local bar_x = rect.x + 14
+  local bar_y = y + 18
+  local bar_w = rect.w - 28
+  local bar_h = 14
+  local scale_max = math.max(10, current_value, active_value)
+  local current_t = clamp_value(current_value / scale_max, 0, 1)
+  local active_t = clamp_value(active_value / scale_max, 0, 1)
+
+  local line = label .. ": " .. tostring(current_value)
+  if active_value ~= current_value then
+    line = line .. " -> " .. tostring(active_value) .. " (" .. format_signed(active_value - current_value) .. ")"
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf(line, rect.x + 14, y, rect.w - 28, "left")
+
+  love.graphics.setColor(0.08, 0.1, 0.14, 1)
+  love.graphics.rectangle("fill", bar_x, bar_y, bar_w, bar_h, 5, 5)
+  love.graphics.setColor(bar_color[1], bar_color[2], bar_color[3], 0.95)
+  love.graphics.rectangle("fill", bar_x + 1, bar_y + 1, math.floor((bar_w - 2) * current_t), bar_h - 2, 4, 4)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  love.graphics.rectangle("line", bar_x, bar_y, bar_w, bar_h, 5, 5)
+
+  local marker_x = bar_x + math.floor((bar_w - 2) * active_t)
+  love.graphics.setColor(0.48, 0.74, 1.0, 1)
+  love.graphics.setLineWidth(2)
+  love.graphics.line(marker_x, bar_y - 1, marker_x, bar_y + bar_h + 1)
+  love.graphics.setLineWidth(1)
+end
+
+local function draw_end_objectives_explain_overlay(rect, mode_text, population_breakdown, population_delta, active_industries, industry_report)
+  local panel_x = rect.x + 8
+  local panel_y = rect.y + 8
+  local panel_w = rect.w - 16
+  local panel_h = rect.h - 50
+
+  love.graphics.setColor(0.04, 0.06, 0.1, 1)
+  love.graphics.rectangle("fill", panel_x, panel_y, panel_w, panel_h, 10, 10)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  love.graphics.rectangle("line", panel_x, panel_y, panel_w, panel_h, 10, 10)
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("Population + Profit Explainer (" .. mode_text .. ")", panel_x + 12, panel_y + 12, panel_w - 24, "left")
+
+  local line_y = panel_y + 34
+  love.graphics.setColor(0.75, 0.87, 0.95, 1)
+  love.graphics.printf(
+    "Population rule: +1 base + primitive quality (G=+1, O=0, B=-1) + synergy (+2/+3/+4 for 2/3/4 good).",
+    panel_x + 12,
+    line_y,
+    panel_w - 24,
+    "left"
+  )
+  line_y = line_y + 34
+
+  if population_breakdown then
+    local q = population_breakdown.quality or {}
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.printf(
+      "Quality: Heat " .. get_quality_code(q.heat) ..
+        "  Air " .. get_quality_code(q.air) ..
+        "  Water " .. get_quality_code(q.water) ..
+        "  Soil " .. get_quality_code(q.soil),
+      panel_x + 12,
+      line_y,
+      panel_w - 24,
+      "left"
+    )
+    line_y = line_y + 18
+    love.graphics.printf(
+      "Population delta: +1 + " .. format_signed(population_breakdown.primitive or 0) ..
+        " + " .. format_signed(population_breakdown.synergy or 0) ..
+        " = " .. format_signed(population_delta or 0),
+      panel_x + 12,
+      line_y,
+      panel_w - 24,
+      "left"
+    )
+    line_y = line_y + 24
+  end
+
+  love.graphics.setColor(0.75, 0.87, 0.95, 1)
+  love.graphics.printf(
+    "Profit rule: each surviving industry adds income each turn (some also scale with population). Harsh primitive ranges can deal damage or destroy equipment.",
+    panel_x + 12,
+    line_y,
+    panel_w - 24,
+    "left"
+  )
+  line_y = line_y + 36
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("Industry detail:", panel_x + 12, line_y, panel_w - 24, "left")
+  line_y = line_y + 18
+
+  for i = 1, terraforming_state:get_industry_slot_count() do
+    if line_y > panel_y + panel_h - 18 then
+      break
+    end
+    local industry = active_industries[i]
+    local report = industry_report and industry_report[i] or nil
+    local line
+    local color = { 0.85, 0.9, 0.96, 1 }
+    if industry then
+      line = "[" .. tostring(i) .. "] " .. industry.name ..
+        " HP " .. tostring(industry.health) .. "/" .. tostring(industry.max_health)
+      if report and not report.empty then
+        if report.destroyed then
+          line = line .. " | destroyed"
+          color = { 0.98, 0.55, 0.52, 1 }
+        else
+          line = line .. " | +" .. tostring(report.income) .. " profit"
+          if (report.damage or 0) > 0 then
+            line = line .. ", -" .. tostring(report.damage) .. " HP"
+            color = { 0.95, 0.84, 0.48, 1 }
+          end
+          if report.reasons and #report.reasons > 0 then
+            line = line .. " (" .. table.concat(report.reasons, ", ") .. ")"
+          end
+        end
+      else
+        line = line .. " | base +" .. tostring(industry.base_profit or 0)
+      end
+    else
+      if report and report.destroyed then
+        line = "[" .. tostring(i) .. "] destroyed this turn (open)"
+        color = { 0.98, 0.55, 0.52, 1 }
+      else
+        line = "[" .. tostring(i) .. "] open"
+        color = { 0.62, 0.72, 0.84, 1 }
+      end
+    end
+    love.graphics.setColor(unpack(color))
+    love.graphics.printf(line, panel_x + 12, line_y, panel_w - 24, "left")
+    line_y = line_y + 16
+  end
+end
+
 local function draw_end_objectives_panel(layout, forecast_ctx)
   local rect = layout.objectives_rect
   local mode_text = get_forecast_mode_label(forecast_ctx.active_mode)
@@ -1300,7 +1451,9 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
     population_delta, population_breakdown = terraforming_state:compute_population_delta(terraforming_state.stats)
   end
 
-  love.graphics.setColor(0.06, 0.08, 0.12, 0.92)
+  local explain_button = get_objectives_explain_button(layout)
+
+  love.graphics.setColor(0.06, 0.08, 0.12, 1)
   love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 10, 10)
   love.graphics.setColor(0.72, 0.82, 0.96, 1)
   love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 10, 10)
@@ -1309,98 +1462,90 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
   love.graphics.printf("End Objectives", rect.x + 14, rect.y + 12, rect.w - 28, "left")
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
   love.graphics.printf(
-    "World " .. tostring(world_index) .. "/" .. tostring(#WORLD_CONFIGS) ..
-      "  Habitability " .. tostring(terraforming_state.habitability) .. "/" .. tostring(terraforming_state.goal),
+    "Mode: " .. mode_text ..
+      "  |  Habitability " .. tostring(terraforming_state.habitability) .. "/" .. tostring(terraforming_state.goal),
     rect.x + 14,
     rect.y + 34,
     rect.w - 28,
     "left"
   )
 
-  local pop_line = "Population: " .. tostring(current_population)
-  if active_summary then
-    pop_line = pop_line .. " -> " .. tostring(active_population) .. " (" .. format_signed(population_delta) .. ")"
-  end
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(pop_line, rect.x + 14, rect.y + 62, rect.w - 28, "left")
-  love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf("Reference mode: " .. mode_text, rect.x + 14, rect.y + 80, rect.w - 28, "left")
+  draw_end_objective_metric_graph(rect, rect.y + 58, "Population", current_population, active_population, { 0.35, 0.66, 0.42 })
+  draw_end_objective_metric_graph(rect, rect.y + 110, "Profit", current_profit, active_profit, { 0.66, 0.56, 0.24 })
 
-  if population_breakdown then
-    local q = population_breakdown.quality or {}
-    local quality_line = "Quality (G/O/B): Heat " .. get_quality_code(q.heat) ..
-      "  Air " .. get_quality_code(q.air) ..
-      "  Water " .. get_quality_code(q.water) ..
-      "  Soil " .. get_quality_code(q.soil)
-    love.graphics.printf(quality_line, rect.x + 14, rect.y + 98, rect.w - 28, "left")
-    love.graphics.printf(
-      "Rule: +1 base + primitive " .. format_signed(population_breakdown.primitive or 0) ..
-        " + synergy " .. format_signed(population_breakdown.synergy or 0) ..
-        " = " .. format_signed(population_delta),
-      rect.x + 14,
-      rect.y + 116,
-      rect.w - 28,
-      "left"
+  local slot_count = terraforming_state:get_industry_slot_count()
+  local slot_gap = 8
+  local slot_w = math.floor((rect.w - 28 - ((slot_count - 1) * slot_gap)) / slot_count)
+  local slot_h = 52
+  local slot_y = rect.y + 172
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("Industry Slots", rect.x + 14, slot_y - 20, rect.w - 28, "left")
+  for i = 1, terraforming_state:get_industry_slot_count() do
+    local slot_x = rect.x + 14 + ((i - 1) * (slot_w + slot_gap))
+    local industry = active_industries[i]
+    local fill = { 0.08, 0.1, 0.14, 1 }
+    local border = { 0.48, 0.58, 0.7, 1 }
+    if industry then
+      local hp_ratio = industry.health / math.max(1, industry.max_health)
+      if hp_ratio <= 0.34 then
+        fill = { 0.24, 0.12, 0.12, 1 }
+        border = { 0.86, 0.45, 0.4, 1 }
+      elseif hp_ratio <= 0.67 then
+        fill = { 0.24, 0.2, 0.1, 1 }
+        border = { 0.93, 0.75, 0.42, 1 }
+      else
+        fill = { 0.12, 0.22, 0.15, 1 }
+        border = { 0.62, 0.9, 0.6, 1 }
+      end
+    else
+      fill = { 0.08, 0.1, 0.14, 1 }
+      border = { 0.45, 0.55, 0.68, 1 }
+    end
+
+    love.graphics.setColor(unpack(fill))
+    love.graphics.rectangle("fill", slot_x, slot_y, slot_w, slot_h, 8, 8)
+    love.graphics.setColor(unpack(border))
+    love.graphics.rectangle("line", slot_x, slot_y, slot_w, slot_h, 8, 8)
+
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.printf(tostring(i), slot_x + 6, slot_y + 4, slot_w - 12, "left")
+    if industry then
+      local name_text = industry.name
+      if #name_text > 18 then
+        name_text = string.sub(name_text, 1, 17) .. "..."
+      end
+      love.graphics.printf(name_text, slot_x + 6, slot_y + 18, slot_w - 12, "center")
+      love.graphics.printf(tostring(industry.health) .. "/" .. tostring(industry.max_health), slot_x + 6, slot_y + 34, slot_w - 12, "center")
+    else
+      local destroyed = industry_report and industry_report[i] and industry_report[i].destroyed
+      love.graphics.setColor(destroyed and 0.98 or 0.75, destroyed and 0.55 or 0.87, destroyed and 0.52 or 0.95, 1)
+      love.graphics.printf(destroyed and "Destroyed" or "Open", slot_x + 6, slot_y + 24, slot_w - 12, "center")
+    end
+  end
+
+  if show_objectives_explain then
+    draw_end_objectives_explain_overlay(
+      rect,
+      mode_text,
+      population_breakdown,
+      population_delta,
+      active_industries,
+      industry_report
     )
   end
 
-  local profit_line = "Profit: " .. tostring(current_profit)
-  if active_summary then
-    profit_line = profit_line .. " -> " .. tostring(active_profit) .. " (" .. format_signed(profit_delta) .. ")"
+  local explain_fill = show_objectives_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
+  if hovered_objectives_explain_button and not show_objectives_explain then
+    explain_fill = { 0.18, 0.24, 0.33, 1 }
   end
+  local explain_border = show_objectives_explain and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
+  love.graphics.setColor(unpack(explain_fill))
+  love.graphics.rectangle("fill", explain_button.x, explain_button.y, explain_button.w, explain_button.h, 7, 7)
+  love.graphics.setColor(unpack(explain_border))
+  love.graphics.rectangle("line", explain_button.x, explain_button.y, explain_button.w, explain_button.h, 7, 7)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(profit_line, rect.x + 14, rect.y + 146, rect.w - 28, "left")
-  love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf("Profit comes from installed industries that survive the turn.", rect.x + 14, rect.y + 164, rect.w - 28, "left")
-
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Industry Slots (max 4):", rect.x + 14, rect.y + 186, rect.w - 28, "left")
-  local slot_y = rect.y + 206
-  local slot_h = 20
-  for i = 1, terraforming_state:get_industry_slot_count() do
-    local industry = active_industries[i]
-    local text
-    local text_color = { 0.85, 0.9, 0.96, 1 }
-    if industry then
-      text = "[" .. tostring(i) .. "] " .. industry.name ..
-        "  HP " .. tostring(industry.health) .. "/" .. tostring(industry.max_health)
-      if industry_report and industry_report[i] and not industry_report[i].empty then
-        local rep = industry_report[i]
-        if rep.destroyed then
-          text = text .. "  | Destroyed this turn"
-          text_color = { 0.98, 0.55, 0.52, 1 }
-        else
-          text = text .. "  | +" .. tostring(rep.income) .. " profit"
-          if (rep.damage or 0) > 0 then
-            text = text .. ", -" .. tostring(rep.damage) .. " HP"
-            text_color = { 0.95, 0.84, 0.48, 1 }
-          end
-        end
-      else
-        text = text .. "  | Base +" .. tostring(industry.base_profit or 0)
-      end
-    else
-      if industry_report and industry_report[i] and industry_report[i].destroyed then
-        text = "[" .. tostring(i) .. "] Destroyed this turn (slot now open)"
-        text_color = { 0.98, 0.55, 0.52, 1 }
-      else
-        text = "[" .. tostring(i) .. "] Open slot"
-        text_color = { 0.62, 0.72, 0.84, 1 }
-      end
-    end
-    love.graphics.setColor(unpack(text_color))
-    love.graphics.printf(text, rect.x + 14, slot_y, rect.w - 28, "left")
-    slot_y = slot_y + slot_h
-  end
-
-  love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf(
-    "Install Industry cards to fill slots. Slots can be replaced/upgraded later.",
-    rect.x + 14,
-    rect.y + rect.h - 34,
-    rect.w - 28,
-    "left"
-  )
+  love.graphics.printf(show_objectives_explain and "Hide Objectives" or "Explain Objectives", explain_button.x + 4, explain_button.y + 6, explain_button.w - 8, "center")
 end
 
 local function draw_influence_details(rect, forecast_ctx)
@@ -1444,7 +1589,7 @@ local function draw_influence_details(rect, forecast_ctx)
     mode_label = "Current State"
   end
 
-  love.graphics.setColor(0.06, 0.08, 0.12, 0.92)
+  love.graphics.setColor(0.06, 0.08, 0.12, 1)
   love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 10, 10)
   love.graphics.setColor(0.72, 0.82, 0.96, 1)
   love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 10, 10)
@@ -1517,7 +1662,7 @@ local function draw_forecast_panel(rect, forecast_ctx)
   local current_population = forecast_ctx.current_economy.population
   local current_profit = forecast_ctx.current_economy.profit
 
-  love.graphics.setColor(0.06, 0.08, 0.12, 0.92)
+  love.graphics.setColor(0.06, 0.08, 0.12, 1)
   love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 10, 10)
   love.graphics.setColor(0.72, 0.82, 0.96, 1)
   love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 10, 10)
@@ -1758,7 +1903,7 @@ local function draw_influence_screen()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print("Core Influence Map (V)", 16, 12)
   love.graphics.print("Click primitive to focus. Arrows show current coupling; blue marker shows card push.", 16, 32)
-  love.graphics.print("Use Explain Graph and Explain Next Turn for detailed breakdowns.", 16, 52)
+  love.graphics.print("Use Explain Graph, Explain Next Turn, and Explain Objectives for detailed breakdowns.", 16, 52)
   love.graphics.print("M mapping, C clear card, I flow, Z current, X do nothing, P selected card, V gameplay.", 16, 72)
 
   draw_influence_nodes(layout, forecast_ctx)
@@ -1790,6 +1935,7 @@ function love.update(dt)
   hovered_forecast_mode = nil
   hovered_graph_explain_button = false
   hovered_turn_explain_button = false
+  hovered_objectives_explain_button = false
 
   local mx, my = love.mouse.getPosition()
 
@@ -1814,6 +1960,16 @@ function love.update(dt)
 
     local explain_button = get_preview_explain_button(layout)
     hovered_turn_explain_button = point_in_rect(mx, my, explain_button.x, explain_button.y, explain_button.w, explain_button.h)
+
+    local objectives_explain_button = get_objectives_explain_button(layout)
+    hovered_objectives_explain_button = point_in_rect(
+      mx,
+      my,
+      objectives_explain_button.x,
+      objectives_explain_button.y,
+      objectives_explain_button.w,
+      objectives_explain_button.h
+    )
 
     if show_turn_explain then
       local forecast_buttons = get_forecast_mode_buttons(layout.turn_explain_rect)
@@ -1982,6 +2138,19 @@ function love.mousepressed(x, y, button)
       if show_turn_explain then
         show_graph_explain = false
       end
+      return
+    end
+
+    local objectives_explain_button = get_objectives_explain_button(layout)
+    if point_in_rect(
+      x,
+      y,
+      objectives_explain_button.x,
+      objectives_explain_button.y,
+      objectives_explain_button.w,
+      objectives_explain_button.h
+    ) then
+      show_objectives_explain = not show_objectives_explain
       return
     end
 

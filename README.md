@@ -21,7 +21,8 @@ The current gameplay prototype is a simple card-driven terraforming system:
 - Three sequential worlds: low threat, elite, boss
 - Interactive Core Influence screen:
   - click a primitive to focus incoming/outgoing effects
-  - right-side `End Objectives` panel tracks `Population` and `Profit`
+  - right-side `End Objectives` panel uses minimalist Population/Profit graphs plus 4 industry slots
+  - bottom `Explain Objectives` button opens detailed Population/Profit math and industry breakdown
   - industry slot status is shown directly in End Objectives
   - optional `Explain Graph` and `Explain Next Turn` overlays for deep breakdowns
   - preview end-of-turn outcomes (baseline vs selected card)
@@ -62,6 +63,7 @@ flowchart TD
 - On Core Influence, click `Do Nothing` or any card in the bottom selector to set preview source
 - On Core Influence, click `Explain Graph` to open/close primitive and coupling explanations
 - On Core Influence, click `Explain Next Turn` to open/close the forecast breakdown
+- On Core Influence, click `Explain Objectives` (bottom of End Objectives panel) to open/close objective math details
 - `N`: go to next world after a world victory
 - `R`: restart run
 
