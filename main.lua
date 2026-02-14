@@ -25,33 +25,33 @@ local INFLUENCE_EDGES = {
 local INFLUENCE_HELP = {
   heat = {
     summary = "Heat is bipolar: too low freezes systems, too high scorches systems.",
-    incoming = "Air drives Heat in the same direction when Air is extreme.",
+    incoming = "Air pushes Heat by following Air's sign when Air is extreme.",
     outgoing = {
-      "Heat influences Water in the opposite direction.",
-      "Heat influences Soil in the opposite direction."
+      "Heat pushes Water by flipping Heat's sign.",
+      "Heat pushes Soil by flipping Heat's sign."
     }
   },
   air = {
     summary = "Air is one-directional health: very negative is toxic/thin, zero is ideal.",
-    incoming = "Water and Soil both influence Air in the same direction.",
+    incoming = "Water and Soil push Air by following their sign.",
     outgoing = {
-      "Air influences Heat in the same direction.",
-      "Air influences Water in the same direction."
+      "Air pushes Heat by following Air's sign.",
+      "Air pushes Water by following Air's sign."
     }
   },
   water = {
     summary = "Water is bipolar: very negative means ice lock, very positive means steam lock.",
-    incoming = "Heat and Air both influence Water.",
+    incoming = "Heat flips Water's sign while Air follows Air's sign.",
     outgoing = {
-      "Water influences Soil in the same direction.",
-      "Water influences Air in the same direction."
+      "Water pushes Soil by following Water's sign.",
+      "Water pushes Air by following Water's sign."
     }
   },
   soil = {
     summary = "Soil is one-directional health: very negative is sterile regolith, zero is ideal.",
-    incoming = "Heat and Water both influence Soil.",
+    incoming = "Heat flips Soil's sign while Water follows Water's sign.",
     outgoing = {
-      "Soil influences Air in the same direction."
+      "Soil pushes Air by following Soil's sign."
     }
   }
 }
@@ -111,7 +111,7 @@ local view_mode = "gameplay" -- gameplay | influence
 local show_real_world_values = false
 local focused_stat = "heat"
 local selected_forecast_card_index = nil
-local forecast_mode = "do_nothing" -- current | do_nothing | selected
+local forecast_mode = "current" -- current | do_nothing | selected
 local edge_filter_mode = "focused_both" -- focused_both | focused_incoming | focused_outgoing | all
 local edge_color_mode = "impact" -- impact | relation
 
@@ -211,6 +211,9 @@ end
 local function sanitize_selection()
   if selected_forecast_card_index and selected_forecast_card_index > #player_deck.hand then
     selected_forecast_card_index = nil
+    if forecast_mode == "selected" then
+      forecast_mode = "current"
+    end
   end
 end
 
@@ -313,12 +316,12 @@ local function get_edge_filter_label(mode)
   elseif mode == "all" then
     return "All Edges"
   end
-  return "Focused"
+  return "In + Out"
 end
 
 local function get_edge_color_label(mode)
   if mode == "relation" then
-    return "Rule Type"
+    return "Polarity"
   end
   return "Current Impact"
 end
@@ -539,7 +542,7 @@ local function setup_world(index)
   campaign_state = "playing"
   selected_forecast_card_index = nil
   focused_stat = "heat"
-  forecast_mode = "do_nothing"
+  forecast_mode = "current"
   edge_filter_mode = "focused_both"
   edge_color_mode = "impact"
 
@@ -619,7 +622,7 @@ local function get_forecast_context()
   local active_mode = forecast_mode
 
   if active_mode == "selected" and (not scenario or not scenario.affordable) then
-    active_mode = "do_nothing"
+    active_mode = "current"
   end
 
   local active_snapshot = terraforming_state.stats
@@ -1031,7 +1034,7 @@ local function draw_influence_edge(source, target, edge, highlight, snapshot)
   if edge_color_mode == "impact" then
     badge_text = format_signed(current_delta)
   else
-    badge_text = factor > 0 and "S" or "O"
+    badge_text = factor > 0 and "F" or "X"
   end
   love.graphics.printf(badge_text, badge_x - 10, badge_y - 7, 20, "center")
 end
@@ -1083,11 +1086,11 @@ local function draw_influence_nodes(layout, forecast_ctx)
     love.graphics.setColor(0.48, 0.88, 1.0, 1)
     love.graphics.circle("fill", map_rect.x + 18, map_rect.y + 58, 7)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("S = same direction", map_rect.x + 30, map_rect.y + 51)
+    love.graphics.print("F = target follows source sign", map_rect.x + 30, map_rect.y + 51)
     love.graphics.setColor(0.98, 0.78, 0.3, 1)
-    love.graphics.circle("fill", map_rect.x + 196, map_rect.y + 58, 7)
+    love.graphics.circle("fill", map_rect.x + 260, map_rect.y + 58, 7)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("O = opposite direction", map_rect.x + 208, map_rect.y + 51)
+    love.graphics.print("X = target flips source sign", map_rect.x + 272, map_rect.y + 51)
   end
 
   for _, edge in ipairs(INFLUENCE_EDGES) do
@@ -1128,12 +1131,38 @@ local function draw_influence_details(layout, forecast_ctx)
   local threshold = terraforming_state.coupling_threshold
   local abs_value = math.abs(value)
   local distance_to_trigger = threshold - abs_value
+  local incoming_edges = {}
+  for _, edge in ipairs(INFLUENCE_EDGES) do
+    if edge.target == focused_stat then
+      table.insert(incoming_edges, edge)
+    end
+  end
   local outgoing_edges = get_edges_from_stat(focused_stat)
+  local incoming_total = 0
+  local incoming_active = 0
+  for _, edge in ipairs(incoming_edges) do
+    local delta = get_edge_trigger_delta(edge, snapshot)
+    incoming_total = incoming_total + delta
+    if delta ~= 0 then
+      incoming_active = incoming_active + 1
+    end
+  end
+  local outgoing_total = 0
+  local outgoing_active = 0
+  for _, edge in ipairs(outgoing_edges) do
+    local delta = get_edge_trigger_delta(edge, snapshot)
+    outgoing_total = outgoing_total + delta
+    if delta ~= 0 then
+      outgoing_active = outgoing_active + 1
+    end
+  end
   local mode_label = "Current"
   if forecast_ctx.active_mode == "do_nothing" then
-    mode_label = "Do Nothing Preview"
+    mode_label = "Do Nothing Forecast"
   elseif forecast_ctx.active_mode == "selected" then
-    mode_label = "Selected Card Preview"
+    mode_label = "Selected Card Forecast"
+  else
+    mode_label = "Current State"
   end
 
   love.graphics.setColor(0.06, 0.08, 0.12, 0.92)
@@ -1147,33 +1176,51 @@ local function draw_influence_details(layout, forecast_ctx)
   love.graphics.printf("Reference: " .. mode_label, rect.x + 14, rect.y + 36, rect.w - 28, "left")
   love.graphics.printf("Notch: " .. format_signed(value) .. " (" .. status .. ")", rect.x + 14, rect.y + 58, rect.w - 28, "left")
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(help.summary, rect.x + 14, rect.y + 80, rect.w - 28, "left")
-  love.graphics.printf("Incoming: " .. help.incoming, rect.x + 14, rect.y + 102, rect.w - 28, "left")
+  love.graphics.printf(help.summary, rect.x + 14, rect.y + 76, rect.w - 28, "left")
+  love.graphics.printf("Incoming: " .. help.incoming, rect.x + 14, rect.y + 94, rect.w - 28, "left")
 
   if distance_to_trigger <= 0 then
     love.graphics.setColor(0.45, 0.95, 0.45, 1)
-    love.graphics.printf("Coupling trigger is ACTIVE at this reference.", rect.x + 14, rect.y + 124, rect.w - 28, "left")
+    love.graphics.printf(
+      "Coupling active: |value| = " .. tostring(abs_value) .. " >= " .. tostring(threshold) .. ".",
+      rect.x + 14,
+      rect.y + 112,
+      rect.w - 28,
+      "left"
+    )
   else
     love.graphics.setColor(0.98, 0.82, 0.35, 1)
-    love.graphics.printf("Needs " .. tostring(distance_to_trigger) .. " more notch(es) to trigger coupling.", rect.x + 14, rect.y + 124, rect.w - 28, "left")
+    love.graphics.printf(
+      "Coupling inactive: |value| = " .. tostring(abs_value) ..
+        ", need " .. tostring(distance_to_trigger) .. " more to reach " .. tostring(threshold) .. ".",
+      rect.x + 14,
+      rect.y + 112,
+      rect.w - 28,
+      "left"
+    )
   end
   love.graphics.setColor(1, 1, 1, 1)
 
-  local line_y = rect.y + 146
-  love.graphics.printf("Outgoing effects now:", rect.x + 14, line_y, rect.w - 28, "left")
-  line_y = line_y + 20
-  for _, edge in ipairs(outgoing_edges) do
-    local delta = get_edge_trigger_delta(edge, snapshot)
-    local delta_text = "inactive"
-    local delta_color = { 0.75, 0.82, 0.9, 1 }
-    if delta ~= 0 then
-      delta_text = STAT_LABELS[edge.target] .. " " .. format_signed(delta)
-      delta_color = { 0.45, 0.95, 0.45, 1 }
-    end
-    love.graphics.setColor(unpack(delta_color))
-    love.graphics.printf("- " .. edge.text .. " => " .. delta_text, rect.x + 14, line_y, rect.w - 28, "left")
-    line_y = line_y + 18
-  end
+  local summary_y = rect.y + 130
+  love.graphics.printf(
+    "Incoming net " .. format_signed(incoming_total) .. " (" ..
+      tostring(incoming_active) .. "/" .. tostring(#incoming_edges) .. " active) | Outgoing net " ..
+      format_signed(outgoing_total) .. " (" .. tostring(outgoing_active) .. "/" ..
+      tostring(#outgoing_edges) .. " active)",
+    rect.x + 14,
+    summary_y,
+    rect.w - 28,
+    "left"
+  )
+
+  love.graphics.setColor(0.75, 0.87, 0.95, 1)
+  love.graphics.printf(
+    "Edge badges show per-link impact now. 0 means source magnitude is below threshold.",
+    rect.x + 14,
+    rect.y + 148,
+    rect.w - 28,
+    "left"
+  )
 
   if show_real_world_values then
     love.graphics.setColor(0.75, 0.87, 0.95, 1)
@@ -1376,8 +1423,8 @@ local function draw_influence_screen()
 
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print("Core Influence Map (V)", 16, 12)
-  love.graphics.print("Click primitive to focus. Flow toggle = incoming/outgoing. Color toggle = impact vs relation.", 16, 32)
-  love.graphics.print("M real-world mapping, C clear card, I flow, O color, Z/X/P preview modes, V returns to gameplay.", 16, 52)
+  love.graphics.print("Click primitive to focus. Flow toggle filters edges. Color toggle = impact vs polarity.", 16, 32)
+  love.graphics.print("M mapping, C clear card, I flow, O color, Z current, X do nothing, P selected, V gameplay.", 16, 52)
 
   draw_influence_nodes(layout, forecast_ctx)
   draw_influence_details(layout, forecast_ctx)
@@ -1518,6 +1565,7 @@ function love.keypressed(key)
     end
 
     if key == "z" then
+      selected_forecast_card_index = nil
       forecast_mode = "current"
       return
     end
@@ -1528,14 +1576,18 @@ function love.keypressed(key)
     end
 
     if key == "p" then
-      forecast_mode = "selected"
+      if selected_forecast_card_index then
+        forecast_mode = "selected"
+      else
+        forecast_mode = "do_nothing"
+      end
       return
     end
 
     if key == "c" then
       selected_forecast_card_index = nil
       if forecast_mode == "selected" then
-        forecast_mode = "do_nothing"
+        forecast_mode = "current"
       end
       return
     end
@@ -1545,7 +1597,7 @@ function love.keypressed(key)
       if selected_forecast_card_index == num then
         selected_forecast_card_index = nil
         if forecast_mode == "selected" then
-          forecast_mode = "do_nothing"
+          forecast_mode = "current"
         end
       else
         selected_forecast_card_index = num
@@ -1593,7 +1645,10 @@ function love.mousepressed(x, y, button)
     local forecast_ctx = get_forecast_context()
     for _, button in ipairs(forecast_buttons) do
       if point_in_rect(x, y, button.x, button.y, button.w, button.h) then
-        if button.id == "selected" then
+        if button.id == "current" then
+          selected_forecast_card_index = nil
+          forecast_mode = "current"
+        elseif button.id == "selected" then
           if forecast_ctx.scenario and forecast_ctx.scenario.affordable then
             forecast_mode = "selected"
           else
@@ -1620,7 +1675,7 @@ function love.mousepressed(x, y, button)
         if selected_forecast_card_index == i then
           selected_forecast_card_index = nil
           if forecast_mode == "selected" then
-            forecast_mode = "do_nothing"
+            forecast_mode = "current"
           end
         else
           selected_forecast_card_index = i

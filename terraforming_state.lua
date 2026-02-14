@@ -90,7 +90,7 @@ function TerraformingState.new(config)
   self.target_band = config.target_band or 1
   self.strain_threshold = config.strain_threshold or 4
   self.critical_threshold = config.critical_threshold or 7
-  self.coupling_threshold = config.coupling_threshold or 5
+  self.coupling_threshold = config.coupling_threshold or 3
   self.turn = 1
   self.status = "ongoing"
   self.habitability = 0
