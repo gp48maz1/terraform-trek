@@ -18,7 +18,7 @@ local INFLUENCE_EDGES = {
   { source = "air", target = "heat", factor = 1, text = "Air -> Heat (+)", curve = 0 },
   { source = "air", target = "water", factor = 1, text = "Air -> Water (+)", curve = -72 },
   { source = "water", target = "soil", factor = 1, text = "Water -> Soil (+)", curve = 0 },
-  { source = "water", target = "air", factor = 1, text = "Water -> Air (+)", curve = 72 },
+  { source = "water", target = "air", factor = -1, text = "Water -> Air (-)", curve = 72 },
   { source = "soil", target = "air", factor = 1, text = "Soil -> Air (+)", curve = 0 }
 }
 

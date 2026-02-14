@@ -274,7 +274,7 @@ function TerraformingState:build_coupling_changes(snapshot)
   apply_rule("air", "heat", 1)
   apply_rule("air", "water", 1)
   apply_rule("water", "soil", 1)
-  apply_rule("water", "air", 1)
+  apply_rule("water", "air", -1)
   apply_rule("soil", "air", 1)
 
   return changes
