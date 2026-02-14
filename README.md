@@ -11,7 +11,9 @@ The current gameplay prototype is a simple card-driven terraforming system:
 - A target value for each primitive per world
 - One output meter: `Habitability`
 - End-turn hazards (intent shown in the HUD)
-- End-turn coupling rules where extreme stats push other stats
+- End-turn coupling rules:
+  - Bipolar stats (`Heat`, `Water`) couple when `|value-target| >= 3`
+  - One-directional stats (`Air`, `Soil`) emit stress when far below target (`<= target-3`) and support near target (`>= target-2`)
 - Three sequential worlds: low threat, elite, boss
 - Interactive Core Influence screen:
   - click a primitive to focus incoming/outgoing effects

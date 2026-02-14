@@ -647,17 +647,7 @@ local function get_edges_from_stat(stat_key)
 end
 
 local function get_edge_trigger_delta(edge, snapshot)
-  local source_value = snapshot[edge.source]
-  if math.abs(source_value) < terraforming_state.coupling_threshold then
-    return 0
-  end
-  local source_sign = 0
-  if source_value > 0 then
-    source_sign = 1
-  elseif source_value < 0 then
-    source_sign = -1
-  end
-  return source_sign * edge.factor
+  return terraforming_state:get_coupling_delta_for_edge(edge.source, edge.factor, snapshot)
 end
 
 local function compute_play_recommendations(limit)
@@ -1113,7 +1103,7 @@ local function draw_influence_nodes(layout, forecast_ctx)
 
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf("Core Influence Graph", map_rect.x + 12, map_rect.y + 10, map_rect.w - 24, "left")
-  love.graphics.printf("Edges activate when |source| >= " .. tostring(terraforming_state.coupling_threshold), map_rect.x + 12, map_rect.y + 30, map_rect.w - 24, "left")
+  love.graphics.printf(terraforming_state:get_coupling_rules_summary(), map_rect.x + 12, map_rect.y + 30, map_rect.w - 24, "left")
 
   local filter_fill = hovered_edge_filter_button and { 0.2, 0.3, 0.4, 0.95 } or { 0.14, 0.19, 0.27, 0.95 }
   love.graphics.setColor(unpack(filter_fill))
@@ -1186,9 +1176,8 @@ local function draw_influence_details(layout, forecast_ctx)
   local value = snapshot[focused_stat]
   local help = INFLUENCE_HELP[focused_stat]
   local status, color = get_stat_status(focused_stat, value)
-  local threshold = terraforming_state.coupling_threshold
-  local abs_value = math.abs(value)
-  local distance_to_trigger = threshold - abs_value
+  local coupling_signal = terraforming_state:get_source_coupling_signal(focused_stat, snapshot)
+  local coupling_rule_text = terraforming_state:get_coupling_rule_text(focused_stat)
   local incoming_edges = {}
   for _, edge in ipairs(INFLUENCE_EDGES) do
     if edge.target == focused_stat then
@@ -1237,10 +1226,19 @@ local function draw_influence_details(layout, forecast_ctx)
   love.graphics.printf(help.summary, rect.x + 14, rect.y + 76, rect.w - 28, "left")
   love.graphics.printf("Incoming: " .. help.incoming, rect.x + 14, rect.y + 94, rect.w - 28, "left")
 
-  if distance_to_trigger <= 0 then
+  if coupling_signal > 0 then
     love.graphics.setColor(0.45, 0.95, 0.45, 1)
     love.graphics.printf(
-      "Coupling active: |value| = " .. tostring(abs_value) .. " >= " .. tostring(threshold) .. ".",
+      "Coupling signal: +1 (supportive) from this source state.",
+      rect.x + 14,
+      rect.y + 112,
+      rect.w - 28,
+      "left"
+    )
+  elseif coupling_signal < 0 then
+    love.graphics.setColor(0.98, 0.62, 0.42, 1)
+    love.graphics.printf(
+      "Coupling signal: -1 (stress) from this source state.",
       rect.x + 14,
       rect.y + 112,
       rect.w - 28,
@@ -1249,8 +1247,7 @@ local function draw_influence_details(layout, forecast_ctx)
   else
     love.graphics.setColor(0.98, 0.82, 0.35, 1)
     love.graphics.printf(
-      "Coupling inactive: |value| = " .. tostring(abs_value) ..
-        ", need " .. tostring(distance_to_trigger) .. " more to reach " .. tostring(threshold) .. ".",
+      "Coupling signal: 0 (inactive) at this source state.",
       rect.x + 14,
       rect.y + 112,
       rect.w - 28,
@@ -1258,8 +1255,9 @@ local function draw_influence_details(layout, forecast_ctx)
     )
   end
   love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf(coupling_rule_text, rect.x + 14, rect.y + 130, rect.w - 28, "left")
 
-  local summary_y = rect.y + 130
+  local summary_y = rect.y + 148
   love.graphics.printf(
     "Incoming net " .. format_signed(incoming_total) .. " (" ..
       tostring(incoming_active) .. "/" .. tostring(#incoming_edges) .. " active) | Outgoing net " ..
@@ -1267,15 +1265,6 @@ local function draw_influence_details(layout, forecast_ctx)
       tostring(#outgoing_edges) .. " active)",
     rect.x + 14,
     summary_y,
-    rect.w - 28,
-    "left"
-  )
-
-  love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf(
-    "Edge badges show per-link impact now. 0 means source magnitude is below threshold.",
-    rect.x + 14,
-    rect.y + 148,
     rect.w - 28,
     "left"
   )

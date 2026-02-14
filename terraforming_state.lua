@@ -53,6 +53,13 @@ local function sign(value)
   return 0
 end
 
+local function format_signed(value)
+  if value > 0 then
+    return "+" .. tostring(value)
+  end
+  return tostring(value)
+end
+
 local function clamp(value, min_value, max_value)
   if value < min_value then
     return min_value
@@ -91,6 +98,7 @@ function TerraformingState.new(config)
   self.strain_threshold = config.strain_threshold or 4
   self.critical_threshold = config.critical_threshold or 7
   self.coupling_threshold = config.coupling_threshold or 3
+  self.coupling_support_threshold = config.coupling_support_threshold or 2
   self.turn = 1
   self.status = "ongoing"
   self.habitability = 0
@@ -262,9 +270,9 @@ function TerraformingState:build_coupling_changes(snapshot)
   local changes = {}
 
   local function apply_rule(source_key, target_key, factor)
-    local source_value = snapshot[source_key] or 0
-    if math.abs(source_value) >= self.coupling_threshold then
-      local delta = sign(source_value) * factor
+    local signal = self:get_source_coupling_signal(source_key, snapshot)
+    if signal ~= 0 then
+      local delta = signal * factor
       changes[target_key] = (changes[target_key] or 0) + delta
     end
   end
@@ -278,6 +286,57 @@ function TerraformingState:build_coupling_changes(snapshot)
   apply_rule("soil", "air", 1)
 
   return changes
+end
+
+function TerraformingState:is_one_directional_stat(key)
+  local bounds = self:get_stat_bounds(key)
+  local target = self.targets[key] or 0
+  return bounds.max <= target
+end
+
+function TerraformingState:get_source_coupling_signal(source_key, snapshot)
+  local source_table = snapshot or self.stats
+  local value = source_table[source_key] or 0
+  local target = self.targets[source_key] or 0
+  local delta_from_target = value - target
+
+  if self:is_one_directional_stat(source_key) then
+    if delta_from_target <= -self.coupling_threshold then
+      return -1
+    end
+    if delta_from_target >= -self.coupling_support_threshold then
+      return 1
+    end
+    return 0
+  end
+
+  if math.abs(delta_from_target) >= self.coupling_threshold then
+    return sign(delta_from_target)
+  end
+  return 0
+end
+
+function TerraformingState:get_coupling_delta_for_edge(source_key, factor, snapshot)
+  local signal = self:get_source_coupling_signal(source_key, snapshot)
+  return signal * (factor or 1)
+end
+
+function TerraformingState:get_coupling_rules_summary()
+  return "Bipolar: |delta| >= " .. tostring(self.coupling_threshold) ..
+    " | One-way: <= target" .. format_signed(-self.coupling_threshold) ..
+    " stress, >= target" .. format_signed(-self.coupling_support_threshold) .. " support"
+end
+
+function TerraformingState:get_coupling_rule_text(source_key)
+  if self:is_one_directional_stat(source_key) then
+    local target = self.targets[source_key] or 0
+    local stress_cutoff = target - self.coupling_threshold
+    local support_cutoff = target - self.coupling_support_threshold
+    return "Rule: <= " .. format_signed(stress_cutoff) .. " gives stress signal; >= " ..
+      format_signed(support_cutoff) .. " gives support signal."
+  end
+  return "Rule: |value-target| >= " .. tostring(self.coupling_threshold) ..
+    " activates by side of target."
 end
 
 function TerraformingState:forecast_end_turn(base_snapshot, opts)
