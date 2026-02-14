@@ -1,111 +1,156 @@
 local CardTypes = {}
 
--- Base card type definitions (Renamed categories)
+-- Base card type definitions
 CardTypes.BaseTypes = {
-    TERRAFORM = {
+    Terraform = {
         category = "Terraform",
         base_properties = {
-            -- Define base terraform properties if any, e.g., target_type?
             energy_cost = 1
         }
     },
-    CHANCE = {
+    Chance = {
         category = "Chance",
         base_properties = {
-            -- Define base chance properties if any
             energy_cost = 1
         }
     },
-    POWER = { -- Keeping Power for now, can remove later if not needed
+    Power = {
         category = "Power",
         base_properties = {
-            duration = 1,
             energy_cost = 1
         }
     }
 }
 
--- Specific card definitions with IDs and effect function names
+-- Specific card definitions with IDs and effect function names.
 CardTypes.Cards = {
-    -- Terraform Cards (Previously Attack)
-    basic_strike = { -- Using snake_case for IDs
-        id = "basic_strike",
-        name = "Basic Strike",
-        description = "Deal 6 damage to the target.",
-        category = "Terraform", -- Renamed
+    heat_up = {
+        id = "heat_up",
+        name = "Solar Mirrors",
+        description = "Heat +2.",
+        category = "Terraform",
         cost = 1,
-        effect_fn_name = "deal_damage", -- Effect function name
+        effect_fn_name = "apply_stat_changes",
         properties = {
-            damage = 6
+            stat_changes = {
+                heat = 2
+            }
         }
     },
-    heavy_strike = {
-        id = "heavy_strike",
-        name = "Heavy Strike",
-        description = "Deal 10 damage. Costs 2 energy.",
-        category = "Terraform", -- Renamed
-        cost = 2,
-        effect_fn_name = "deal_damage", -- Same effect, different parameters
-        properties = {
-            damage = 10
-        }
-    },
-
-    -- Chance Cards (Previously Skill)
-    basic_defend = {
-        id = "basic_defend",
-        name = "Basic Defend",
-        description = "Gain 5 block.", -- Need to define what "block" means
-        category = "Chance", -- Renamed
+    heat_down = {
+        id = "heat_down",
+        name = "Orbital Shades",
+        description = "Heat -2.",
+        category = "Terraform",
         cost = 1,
-        effect_fn_name = "gain_block", -- Effect function name
+        effect_fn_name = "apply_stat_changes",
         properties = {
-            block_amount = 5
+            stat_changes = {
+                heat = -2
+            }
         }
     },
-    draw_cards = {
-        id = "draw_cards",
-        name = "Draw Cards",
+    air_up = {
+        id = "air_up",
+        name = "Atmo Seeding",
+        description = "Air +2.",
+        category = "Terraform",
+        cost = 1,
+        effect_fn_name = "apply_stat_changes",
+        properties = {
+            stat_changes = {
+                air = 2
+            }
+        }
+    },
+    air_down = {
+        id = "air_down",
+        name = "Carbon Scrub",
+        description = "Air -2.",
+        category = "Terraform",
+        cost = 1,
+        effect_fn_name = "apply_stat_changes",
+        properties = {
+            stat_changes = {
+                air = -2
+            }
+        }
+    },
+    water_up = {
+        id = "water_up",
+        name = "Comet Capture",
+        description = "Water +2.",
+        category = "Terraform",
+        cost = 1,
+        effect_fn_name = "apply_stat_changes",
+        properties = {
+            stat_changes = {
+                water = 2
+            }
+        }
+    },
+    water_down = {
+        id = "water_down",
+        name = "Drain Basins",
+        description = "Water -2.",
+        category = "Terraform",
+        cost = 1,
+        effect_fn_name = "apply_stat_changes",
+        properties = {
+            stat_changes = {
+                water = -2
+            }
+        }
+    },
+    soil_up = {
+        id = "soil_up",
+        name = "Nutrient Dust",
+        description = "Soil +2.",
+        category = "Terraform",
+        cost = 1,
+        effect_fn_name = "apply_stat_changes",
+        properties = {
+            stat_changes = {
+                soil = 2
+            }
+        }
+    },
+    soil_down = {
+        id = "soil_down",
+        name = "Strip Mine",
+        description = "Soil -2.",
+        category = "Terraform",
+        cost = 1,
+        effect_fn_name = "apply_stat_changes",
+        properties = {
+            stat_changes = {
+                soil = -2
+            }
+        }
+    },
+    stabilize = {
+        id = "stabilize",
+        name = "Stabilize Grid",
+        description = "Move all stats 1 step toward target.",
+        category = "Chance",
+        cost = 1,
+        effect_fn_name = "stabilize_system",
+        properties = {}
+    },
+    survey = {
+        id = "survey",
+        name = "Deep Survey",
         description = "Draw 2 cards.",
-        category = "Chance", -- Renamed
+        category = "Chance",
         cost = 1,
-        effect_fn_name = "draw_cards", -- Effect function name
+        effect_fn_name = "draw_cards",
         properties = {
             draw_amount = 2
         }
-    },
-
-    -- Power Cards (Keep or modify as needed)
-    gain_strength = {
-        id = "gain_strength",
-        name = "Gain Strength",
-        description = "Gain 2 strength for the rest of combat.", -- Define "strength"
-        category = "Power",
-        cost = 1,
-        effect_fn_name = "apply_buff", -- Generic buff function?
-        properties = {
-            duration = -1, -- -1 means permanent
-            buff_type = "strength",
-            buff_amount = 2
-        }
-    },
-    gain_dexterity = {
-        id = "gain_dexterity",
-        name = "Gain Dexterity",
-        description = "Gain 2 dexterity for the rest of combat.", -- Define "dexterity"
-        category = "Power",
-        cost = 1,
-        effect_fn_name = "apply_buff",
-        properties = {
-            duration = -1,
-            buff_type = "dexterity",
-            buff_amount = 2
-        }
     }
 }
 
--- Function to create card data from a type definition (ID)
-function CardTypes.createCardData(cardId) -- Renamed function for clarity
+function CardTypes.createCardData(cardId)
     local cardDef = CardTypes.Cards[cardId]
     if not cardDef then
         error("Invalid card ID: " .. tostring(cardId))
@@ -118,22 +163,19 @@ function CardTypes.createCardData(cardId) -- Renamed function for clarity
         description = cardDef.description,
         category = cardDef.category,
         cost = cardDef.cost,
-        effect_fn_name = cardDef.effect_fn_name, -- Include effect function name
+        effect_fn_name = cardDef.effect_fn_name,
         properties = {}
     }
 
-    -- Merge base properties (if category exists in BaseTypes)
     local baseType = CardTypes.BaseTypes[cardDef.category]
     if baseType and baseType.base_properties then
         for k, v in pairs(baseType.base_properties) do
-            -- Only add base property if not already defined in specific card
             if cardData.properties[k] == nil then
                  cardData.properties[k] = v
             end
         end
     end
 
-    -- Merge specific card properties (overwriting base properties if needed)
     if cardDef.properties then
         for k, v in pairs(cardDef.properties) do
             cardData.properties[k] = v
@@ -143,8 +185,7 @@ function CardTypes.createCardData(cardId) -- Renamed function for clarity
     return cardData
 end
 
--- Function to get all available card IDs
-function CardTypes.getAllCardIds() -- Renamed function for clarity
+function CardTypes.getAllCardIds()
     local ids = {}
     for id, _ in pairs(CardTypes.Cards) do
         table.insert(ids, id)

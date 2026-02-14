@@ -1,5 +1,46 @@
 # terraform-trek
-A rouge-like game built in Lua and Love2d inspired by Terraform Mars
+A rogue-like game built in Lua and Love2d inspired by Terraforming Mars.
+
+## Current Prototype Loop
+
+The current gameplay prototype is a simple card-driven terraforming system:
+
+- Four terraform primitives: `Heat`, `Air`, `Water`, `Soil` (range `-4` to `+4`)
+- A target value for each primitive per world
+- One output meter: `Habitability`
+- End-turn hazards (intent shown in the HUD)
+- End-turn coupling rules where extreme stats push other stats
+- Three sequential worlds: low threat, elite, boss
+
+### Flow Diagram
+
+See `/Users/garypeters/Documents/GitHub/terraform-trek/gameplay_flow.mmd` for the full gameplay flow diagram.
+
+```mermaid
+flowchart TD
+    A["Start Run (R)"] --> B["Setup World"]
+    B --> C["Terraforming state + starter deck setup"]
+    C --> D["Turn loop"]
+    D --> E{"Play card or end turn?"}
+    E -->|Play card| F["Apply card effect + spend energy + discard card"]
+    F --> D
+    E -->|End turn| G["Apply hazard + coupling + habitability scoring"]
+    G --> H{"World status"}
+    H -->|Ongoing| I["Discard hand + draw 5 + reset energy"]
+    I --> D
+    H -->|World won| J{"Last world?"}
+    J -->|No| K["Next world"]
+    K --> B
+    J -->|Yes| L["Campaign won"]
+    H -->|Lost| M["Campaign lost"]
+```
+
+### Controls
+
+- Click a card or press `1-9`: play card from hand
+- Click `END TURN` or press `E`: end turn
+- `N`: go to next world after a world victory
+- `R`: restart run
 
 ## Running Locally
 

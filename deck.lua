@@ -22,10 +22,13 @@ function Deck:create_starter_deck()
   self.hand = {}
   self.discard_pile = {}
 
-  -- Define starter deck composition by ID
+  -- Starter deck tuned for bidirectional control on 4 terraform stats.
   local starter_card_ids = {
-    'basic_strike', 'basic_strike', 'basic_strike', 'basic_strike', 'basic_strike', -- 5 Strikes
-    'basic_defend', 'basic_defend', 'basic_defend', 'basic_defend', 'basic_defend'  -- 5 Defends
+    'heat_up', 'heat_up', 'heat_down',
+    'air_up', 'air_down',
+    'water_up', 'water_up', 'water_down',
+    'soil_up', 'soil_down',
+    'stabilize', 'survey'
   }
 
   -- Create card objects from IDs
@@ -85,6 +88,14 @@ function Deck:draw(count)
   print("Drew " .. drawn_count .. " card(s).")
 end
 
+function Deck:discard_hand()
+  local hand_size = #self.hand
+  while #self.hand > 0 do
+    table.insert(self.discard_pile, table.remove(self.hand))
+  end
+  print("Discarded " .. hand_size .. " card(s).")
+end
+
 -- Attempt to play a card from hand, checking energy and executing effects
 -- Returns the card if played successfully, otherwise nil
 -- Accepts a 'context' table containing necessary game state (e.g., context.target)
@@ -113,14 +124,14 @@ function Deck:play_card(card_index, current_energy, context)
   if card.effect_fn_name then
     local effect_func = CardEffects[card.effect_fn_name]
     if effect_func and type(effect_func) == 'function' then
-      -- Prepare context for the effect function
-      local effect_context = {
-        card = card,        -- The card object itself
-        deck = self,        -- The deck instance
-        target = context.target -- Pass the target from the main game loop
-        -- Add other needed context later (e.g., player state)
-      }
-      print("Calling effect function: " .. card.effect_fn_name)
+      -- Merge caller-provided context with base context.
+      local effect_context = {}
+      for k, v in pairs(context) do
+        effect_context[k] = v
+      end
+      effect_context.card = card
+      effect_context.deck = self
+
       effect_func(effect_context) -- Execute the effect
     else
       print("Warning: Effect function '" .. card.effect_fn_name .. "' not found or not a function in CardEffects.")

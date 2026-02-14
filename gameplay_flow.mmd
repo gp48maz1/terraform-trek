@@ -1,0 +1,35 @@
+flowchart TD
+    A["Start Run (R)"] --> B["Setup World"]
+    B --> C["Create TerraformingState<br/>- targets<br/>- hazards<br/>- goal / turn limit"]
+    C --> D["Create starter deck<br/>shuffle + draw 5 + reset energy"]
+    D --> E["Player Turn Loop"]
+
+    E --> F["Render HUD<br/>stats + habitability + next hazard<br/>deck (left) + discard (right)"]
+    F --> G{"Player action"}
+
+    G --> H["Play card<br/>(click card or 1-9)"]
+    H --> I{"Enough energy?"}
+    I -->|No| G
+    I -->|Yes| J["Apply card effect<br/>modify Heat/Air/Water/Soil or draw/stabilize"]
+    J --> K["Move card to discard<br/>spend energy"]
+    K --> G
+
+    G --> L["End Turn<br/>(click END TURN or E)"]
+    L --> M["Apply hazard deltas"]
+    M --> N["Apply coupling rules<br/>for extreme stat values"]
+    N --> O["Compute growth - penalty = net"]
+    O --> P["Update habitability"]
+    P --> Q{"World status?"}
+
+    Q -->|Ongoing| R["Discard hand + draw 5<br/>reset energy + next turn"]
+    R --> E
+
+    Q -->|Won| S{"Last world?"}
+    S -->|No| T["World clear overlay<br/>N for next world"]
+    T --> B
+    S -->|Yes| U["Campaign win overlay"]
+
+    Q -->|Lost| V["Campaign loss overlay"]
+    U --> W["Restart (R)"]
+    V --> W
+    W --> A

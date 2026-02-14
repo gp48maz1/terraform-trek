@@ -48,11 +48,13 @@ function Card:draw(x, y)
   
   -- Determine category color
   local category_color = {0.5, 0.5, 0.5} -- Default gray
-  if self.category == "Attack" then
-    category_color = {1, 0, 0} -- Red
-  elseif self.category == "Skill" then
-    category_color = {0, 0, 1} -- Blue
-  end -- Add more categories later if needed
+  if self.category == "Terraform" then
+    category_color = {0.05, 0.55, 0.25}
+  elseif self.category == "Chance" then
+    category_color = {0.1, 0.35, 0.7}
+  elseif self.category == "Power" then
+    category_color = {0.6, 0.25, 0.1}
+  end
 
   -- 1. Draw background
   gfx.setColor(bg_color[1], bg_color[2], bg_color[3])
