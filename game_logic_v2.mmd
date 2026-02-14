@@ -1,0 +1,58 @@
+flowchart TD
+    subgraph Core["Terraform Core (V2)"]
+        Heat["Heat (-4 to +4)"]
+        Air["Air (-4 to +4)"]
+        Water["Water (-4 to +4)"]
+        Soil["Soil (-4 to +4)"]
+        Targets["World Target Profile<br/>(target Heat/Air/Water/Soil)"]
+    end
+
+    subgraph Coupling["Threshold Coupling (single pass at end turn)"]
+        C1["Heat -> Water (-)"]
+        C2["Heat -> Soil (-)"]
+        C3["Air -> Heat (+)"]
+        C4["Air -> Water (+)"]
+        C5["Water -> Soil (+)"]
+        C6["Water -> Air (+)"]
+        C7["Soil -> Air (+)"]
+    end
+
+    subgraph Turn["Turn Flow"]
+        Start["Start Turn<br/>Energy reset, hand available"] --> Play["Play cards<br/>(click card or 1-9)"]
+        Play --> EndTurn["End Turn<br/>(click END TURN or E)"]
+        EndTurn --> Hazard["Apply Hazard Intent deltas"]
+        Hazard --> ApplyCoupling["Apply coupling changes<br/>if abs(stat) >= 3"]
+        ApplyCoupling --> Score["Score Habitability delta"]
+        Score --> Check{"Goal reached or turn limit hit?"}
+        Check -->|No| Next["Discard hand, draw 5, next turn"]
+        Next --> Start
+        Check -->|Goal reached| Win["World cleared<br/>(N for next world)"]
+        Check -->|Turn limit hit| Lose["Run failed"]
+    end
+
+    Play --> Heat
+    Play --> Air
+    Play --> Water
+    Play --> Soil
+
+    Heat --> C1
+    Heat --> C2
+    Air --> C3
+    Air --> C4
+    Water --> C5
+    Water --> C6
+    Soil --> C7
+
+    C1 --> Water
+    C2 --> Soil
+    C3 --> Heat
+    C4 --> Water
+    C5 --> Soil
+    C6 --> Air
+    C7 --> Air
+
+    Heat --> Score
+    Air --> Score
+    Water --> Score
+    Soil --> Score
+    Targets --> Score
