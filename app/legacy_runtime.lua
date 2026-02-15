@@ -11,6 +11,7 @@ local Viewport = require("viewport")
 local Worlds = require("content.worlds")
 local CouplingRules = require("content.coupling_rules")
 local PreviewContextSystem = require("systems.preview_context_system")
+local ActionApplier = require("systems.action_applier")
 
 local VIEWPORT_REF_W = 1728
 local VIEWPORT_REF_H = 798
@@ -829,23 +830,6 @@ local function end_turn()
   reset_energy()
 end
 
-local function apply_card_to_snapshot(card, snapshot, economy_state)
-  if not card then
-    return
-  end
-
-  if card.effect_fn_name == "apply_stat_changes" then
-    terraforming_state:apply_stat_changes_to(card.properties.stat_changes or {}, snapshot)
-  elseif card.effect_fn_name == "stabilize_system" then
-    terraforming_state:adjust_snapshot_toward_targets(snapshot, 1)
-  elseif card.effect_fn_name == "install_industry" then
-    local industry_def = card.properties and card.properties.industry_def
-    if industry_def and economy_state and economy_state.industries then
-      terraforming_state:install_industry_in_slots(industry_def, economy_state.industries)
-    end
-  end
-end
-
 local function get_forecast_context()
   return PreviewContextSystem.build(
     terraforming_state,
@@ -883,7 +867,7 @@ local function compute_play_recommendations(limit)
     if can_afford(card.cost or 0) then
       local snapshot = copy_stats(terraforming_state.stats)
       local economy = terraforming_state:get_economy_snapshot()
-      apply_card_to_snapshot(card, snapshot, economy)
+      ActionApplier.apply_card_preview(terraforming_state, card, snapshot, economy)
       local summary = terraforming_state:forecast_end_turn(snapshot, { economy_state = economy })
       local next_distance = math.abs(summary.projected_stats[focused_stat] - terraforming_state.targets[focused_stat])
       local focus_gain = current_distance - next_distance

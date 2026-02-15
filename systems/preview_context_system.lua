@@ -1,4 +1,5 @@
 local PreviewContextSystem = {}
+local ActionApplier = require("systems.action_applier")
 
 local function shallow_copy(input)
   local out = {}
@@ -13,23 +14,6 @@ local function normalize_mode(mode)
     return mode
   end
   return "current"
-end
-
-local function apply_card_to_snapshot(state, card, snapshot, economy_state)
-  if not card then
-    return
-  end
-
-  if card.effect_fn_name == "apply_stat_changes" then
-    state:apply_stat_changes_to((card.properties and card.properties.stat_changes) or {}, snapshot)
-  elseif card.effect_fn_name == "stabilize_system" then
-    state:adjust_snapshot_toward_targets(snapshot, 1)
-  elseif card.effect_fn_name == "install_industry" then
-    local industry_def = card.properties and card.properties.industry_def
-    if industry_def and economy_state and economy_state.industries then
-      state:install_industry_in_slots(industry_def, economy_state.industries)
-    end
-  end
 end
 
 local function get_edges_for_snapshot(state, snapshot)
@@ -55,7 +39,7 @@ function PreviewContextSystem.build(state, hand, selected_card_index, forecast_m
     if card then
       local preview_snapshot = shallow_copy(current_snapshot)
       local preview_economy = state:get_economy_snapshot()
-      apply_card_to_snapshot(state, card, preview_snapshot, preview_economy)
+      ActionApplier.apply_card_preview(state, card, preview_snapshot, preview_economy)
       card_push_snapshot = shallow_copy(preview_snapshot)
       scenario = {
         card = card,
