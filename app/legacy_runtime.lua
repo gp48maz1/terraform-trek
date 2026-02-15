@@ -14,6 +14,7 @@ local PreviewContextSystem = require("systems.preview_context_system")
 local ActionApplier = require("systems.action_applier")
 local InfluenceUIState = require("app.influence_ui_state")
 local InfluenceLayout = require("ui.layout.influence_layout")
+local GameplayLayout = require("ui.layout.gameplay_layout")
 
 local VIEWPORT_REF_W = 1728
 local VIEWPORT_REF_H = 798
@@ -260,10 +261,10 @@ local function update_target_layout()
   if not target then
     return
   end
-  local safe = get_safe_rect()
-  target.x = safe.x + (safe.w * 0.72)
-  target.y = safe.y + (safe.h * 0.34)
-  target.radius = math.floor(math.min(safe.w, safe.h) * 0.28)
+  local planet = GameplayLayout.get_planet(get_safe_rect())
+  target.x = planet.x
+  target.y = planet.y
+  target.radius = planet.radius
 end
 
 local function point_in_rect(px, py, rx, ry, rw, rh)
@@ -406,24 +407,11 @@ local function get_hazard_origin_color(origin)
 end
 
 local function get_hazard_card_rect()
-  local safe = get_safe_rect()
-  local card_w = 132
-  local card_h = 170
-  local desired_x = target.x - target.radius - card_w - 24
-  local min_x = safe.x + 16
-  local max_x = safe.x + safe.w - card_w - 16
-  local x = clamp_value(desired_x, min_x, max_x)
-  local y = clamp_value(
-    target.y - math.floor(card_h * 0.36),
-    safe.y + 16,
-    safe.y + safe.h - card_h - 16
-  )
-  return {
-    x = x,
-    y = y,
-    w = card_w,
-    h = card_h
-  }
+  return GameplayLayout.get_hazard_card_rect(get_safe_rect(), {
+    x = target.x,
+    y = target.y,
+    radius = target.radius
+  })
 end
 
 local function draw_next_hazard_card()
@@ -512,49 +500,20 @@ local function edge_is_visible(edge)
 end
 
 local function get_hand_layout(num_cards)
-  local safe = get_safe_rect()
-  local total_hand_width = 0
-  if num_cards > 0 then
-    total_hand_width = HAND_UI.card_width + (num_cards - 1) * HAND_UI.card_spacing
-  end
-  local start_x = safe.x + ((safe.w - total_hand_width) * 0.5)
-  local base_y = safe.y + safe.h - HAND_UI.card_height - 24
-  return { start_x = start_x, base_y = base_y }
+  return GameplayLayout.get_hand_layout(get_safe_rect(), num_cards, HAND_UI)
 end
 
 local function get_draw_pile_rect()
-  local safe = get_safe_rect()
-  local y = safe.y + safe.h - PILE_UI.height - 12
-  return {
-    x = safe.x + 16,
-    y = y,
-    w = PILE_UI.width,
-    h = PILE_UI.height
-  }
+  return GameplayLayout.get_deck_rect(get_safe_rect(), PILE_UI)
 end
 
 local function get_discard_pile_rect()
-  local safe = get_safe_rect()
-  local y = safe.y + safe.h - PILE_UI.height - 12
-  return {
-    x = safe.x + safe.w - PILE_UI.width - 16,
-    y = y,
-    w = PILE_UI.width,
-    h = PILE_UI.height
-  }
+  return GameplayLayout.get_discard_rect(get_safe_rect(), PILE_UI)
 end
 
 local function get_end_turn_rect()
-  local safe = get_safe_rect()
   local hand_layout = get_hand_layout(#player_deck.hand)
-  local y = hand_layout.base_y + math.floor((HAND_UI.card_height - END_TURN_UI.height) * 0.5)
-  y = clamp_value(y, safe.y + 14, safe.y + safe.h - END_TURN_UI.height - 14)
-  return {
-    x = safe.x + safe.w - END_TURN_UI.width - 16,
-    y = y,
-    w = END_TURN_UI.width,
-    h = END_TURN_UI.height
-  }
+  return GameplayLayout.get_end_turn_rect(get_safe_rect(), hand_layout, HAND_UI, END_TURN_UI)
 end
 
 local function get_card_index_at_position(mx, my)
