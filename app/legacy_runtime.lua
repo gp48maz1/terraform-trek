@@ -12,6 +12,7 @@ local Worlds = require("content.worlds")
 local CouplingRules = require("content.coupling_rules")
 local PreviewContextSystem = require("systems.preview_context_system")
 local ActionApplier = require("systems.action_applier")
+local InfluenceUIState = require("app.influence_ui_state")
 
 local VIEWPORT_REF_W = 1728
 local VIEWPORT_REF_H = 798
@@ -135,25 +136,12 @@ local campaign_state = "playing" -- playing | world_won | campaign_won | campaig
 local turn_summary = nil
 local view_mode = "gameplay" -- gameplay | influence
 local show_real_world_values = false
-local focused_stat = "heat"
-local selected_forecast_card_index = nil
-local forecast_mode = "current" -- current | do_nothing | selected
-local edge_filter_mode = "focused_both" -- focused_both | focused_incoming | focused_outgoing | all
-local show_graph_explain = false
-local show_turn_explain = false
-local show_objectives_explain = false
+local influence_ui = InfluenceUIState.new()
 
 local hovered_card_index = nil
 local hovered_draw_pile = false
 local hovered_discard_pile = false
 local hovered_end_turn = false
-local hovered_influence_stat = nil
-local hovered_forecast_option_index = nil
-local hovered_edge_filter_button = false
-local hovered_forecast_mode = nil
-local hovered_graph_explain_button = false
-local hovered_turn_explain_button = false
-local hovered_objectives_explain_button = false
 
 local max_energy = 3
 local current_energy = 0
@@ -297,15 +285,6 @@ end
 
 local function spend_energy(cost)
   current_energy = current_energy - (cost or 0)
-end
-
-local function sanitize_selection()
-  if selected_forecast_card_index and selected_forecast_card_index > #player_deck.hand then
-    selected_forecast_card_index = nil
-    if forecast_mode == "selected" then
-      forecast_mode = "current"
-    end
-  end
 end
 
 local function get_stat_status(stat, value)
@@ -527,37 +506,8 @@ local function draw_next_hazard_card()
   end
 end
 
-local function get_edge_filter_label(mode)
-  if mode == "focused_incoming" then
-    return "Incoming"
-  elseif mode == "focused_outgoing" then
-    return "Outgoing"
-  elseif mode == "all" then
-    return "All Edges"
-  end
-  return "In + Out"
-end
-
-local function cycle_edge_filter_mode()
-  local modes = { "focused_both", "focused_incoming", "focused_outgoing", "all" }
-  for i, mode in ipairs(modes) do
-    if edge_filter_mode == mode then
-      edge_filter_mode = modes[(i % #modes) + 1]
-      return
-    end
-  end
-  edge_filter_mode = modes[1]
-end
-
 local function edge_is_visible(edge)
-  if edge_filter_mode == "all" then
-    return true
-  elseif edge_filter_mode == "focused_incoming" then
-    return edge.target == focused_stat
-  elseif edge_filter_mode == "focused_outgoing" then
-    return edge.source == focused_stat
-  end
-  return edge.source == focused_stat or edge.target == focused_stat
+  return influence_ui:edge_is_visible(edge)
 end
 
 local function get_hand_layout(num_cards)
@@ -785,13 +735,7 @@ local function setup_world(index)
   terraforming_state = TerraformingState.new(config)
   turn_summary = nil
   campaign_state = "playing"
-  selected_forecast_card_index = nil
-  focused_stat = "heat"
-  forecast_mode = "current"
-  edge_filter_mode = "focused_both"
-  show_graph_explain = false
-  show_turn_explain = false
-  show_objectives_explain = false
+  influence_ui:reset_for_new_campaign()
 
   player_deck:create_starter_deck()
   player_deck:draw(5)
@@ -808,8 +752,7 @@ local function end_turn()
   end
 
   turn_summary = terraforming_state:end_turn()
-  selected_forecast_card_index = nil
-  forecast_mode = "current"
+  influence_ui:set_current_mode()
 
   if terraforming_state.status == "won" then
     if world_index == #WORLD_CONFIGS then
@@ -834,8 +777,8 @@ local function get_forecast_context()
   return PreviewContextSystem.build(
     terraforming_state,
     player_deck.hand,
-    selected_forecast_card_index,
-    forecast_mode,
+    influence_ui.selected_forecast_card_index,
+    influence_ui.forecast_mode,
     can_afford
   )
 end
@@ -861,7 +804,7 @@ local function compute_play_recommendations(limit)
   local baseline = terraforming_state:forecast_end_turn(terraforming_state.stats, {
     economy_state = terraforming_state:get_economy_snapshot()
   })
-  local current_distance = math.abs(terraforming_state.stats[focused_stat] - terraforming_state.targets[focused_stat])
+  local current_distance = math.abs(terraforming_state.stats[influence_ui.focused_stat] - terraforming_state.targets[influence_ui.focused_stat])
 
   for i, card in ipairs(player_deck.hand) do
     if can_afford(card.cost or 0) then
@@ -869,7 +812,7 @@ local function compute_play_recommendations(limit)
       local economy = terraforming_state:get_economy_snapshot()
       ActionApplier.apply_card_preview(terraforming_state, card, snapshot, economy)
       local summary = terraforming_state:forecast_end_turn(snapshot, { economy_state = economy })
-      local next_distance = math.abs(summary.projected_stats[focused_stat] - terraforming_state.targets[focused_stat])
+      local next_distance = math.abs(summary.projected_stats[influence_ui.focused_stat] - terraforming_state.targets[influence_ui.focused_stat])
       local focus_gain = current_distance - next_distance
       local net_gain = summary.net - baseline.net
       local score = net_gain * 10 + focus_gain + summary.population_delta + math.floor(summary.profit_delta * 0.5)
@@ -926,8 +869,7 @@ local function try_play_card(card_index)
   local played_card = player_deck:play_card(card_index, current_energy, context)
   if played_card then
     spend_energy(played_card.cost)
-    selected_forecast_card_index = nil
-    forecast_mode = "current"
+    influence_ui:set_current_mode()
     return true
   end
 
@@ -1464,25 +1406,25 @@ local function draw_influence_nodes(layout, forecast_ctx)
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
   love.graphics.printf(projection_label, map_rect.x + 12, map_rect.y + 48, map_rect.w - 24, "left")
 
-  local filter_fill = hovered_edge_filter_button and { 0.2, 0.3, 0.4, 0.95 } or { 0.14, 0.19, 0.27, 0.95 }
+  local filter_fill = influence_ui.hovered_edge_filter_button and { 0.2, 0.3, 0.4, 0.95 } or { 0.14, 0.19, 0.27, 0.95 }
   love.graphics.setColor(unpack(filter_fill))
   love.graphics.rectangle("fill", toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h, 7, 7)
   love.graphics.setColor(0.7, 0.82, 0.96, 1)
   love.graphics.rectangle("line", toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h, 7, 7)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Flow: " .. get_edge_filter_label(edge_filter_mode), toggle_buttons.filter.x + 8, toggle_buttons.filter.y + 6, toggle_buttons.filter.w - 12, "left")
+  love.graphics.printf("Flow: " .. influence_ui:get_edge_filter_label(), toggle_buttons.filter.x + 8, toggle_buttons.filter.y + 6, toggle_buttons.filter.w - 12, "left")
 
-  local graph_fill = show_graph_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
-  if hovered_graph_explain_button and not show_graph_explain then
+  local graph_fill = influence_ui.show_graph_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
+  if influence_ui.hovered_graph_explain_button and not influence_ui.show_graph_explain then
     graph_fill = { 0.18, 0.24, 0.33, 1 }
   end
-  local graph_border = show_graph_explain and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
+  local graph_border = influence_ui.show_graph_explain and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
   love.graphics.setColor(unpack(graph_fill))
   love.graphics.rectangle("fill", toggle_buttons.explain_graph.x, toggle_buttons.explain_graph.y, toggle_buttons.explain_graph.w, toggle_buttons.explain_graph.h, 7, 7)
   love.graphics.setColor(unpack(graph_border))
   love.graphics.rectangle("line", toggle_buttons.explain_graph.x, toggle_buttons.explain_graph.y, toggle_buttons.explain_graph.w, toggle_buttons.explain_graph.h, 7, 7)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(show_graph_explain and "Hide Graph" or "Explain Graph", toggle_buttons.explain_graph.x + 4, toggle_buttons.explain_graph.y + 6, toggle_buttons.explain_graph.w - 8, "center")
+  love.graphics.printf(influence_ui.show_graph_explain and "Hide Graph" or "Explain Graph", toggle_buttons.explain_graph.x + 4, toggle_buttons.explain_graph.y + 6, toggle_buttons.explain_graph.w - 8, "center")
 
   love.graphics.setColor(0.45, 0.95, 0.45, 1)
   love.graphics.circle("fill", map_rect.x + 18, map_rect.y + 58, 7)
@@ -1509,7 +1451,7 @@ local function draw_influence_nodes(layout, forecast_ctx)
     if edge_is_visible(edge) then
       local source = layout.nodes[edge.source]
       local target = layout.nodes[edge.target]
-      local highlight = edge.source == focused_stat or edge.target == focused_stat
+      local highlight = edge.source == influence_ui.focused_stat or edge.target == influence_ui.focused_stat
       local edge_delta = get_context_edge_delta(forecast_ctx, edge)
       draw_influence_edge(source, target, edge, highlight, edge_delta)
     end
@@ -1524,8 +1466,8 @@ local function draw_influence_nodes(layout, forecast_ctx)
       preview_value = forecast_ctx.card_push_snapshot[key]
     end
     local status, color = get_stat_status(key, value)
-    local is_focused = key == focused_stat
-    local is_hovered = key == hovered_influence_stat
+    local is_focused = key == influence_ui.focused_stat
+    local is_hovered = key == influence_ui.hovered_influence_stat
 
     draw_stat_track(map_rect, node, key, current_value, preview_value, terraforming_state.targets[key])
 
@@ -2684,7 +2626,7 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
     end
   end
 
-  if show_objectives_explain then
+  if influence_ui.show_objectives_explain then
     draw_end_objectives_explain_overlay(
       rect,
       mode_text,
@@ -2701,33 +2643,33 @@ local function draw_end_objectives_panel(layout, forecast_ctx)
     )
   end
 
-  local explain_fill = show_objectives_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
-  if hovered_objectives_explain_button and not show_objectives_explain then
+  local explain_fill = influence_ui.show_objectives_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
+  if influence_ui.hovered_objectives_explain_button and not influence_ui.show_objectives_explain then
     explain_fill = { 0.18, 0.24, 0.33, 1 }
   end
-  local explain_border = show_objectives_explain and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
+  local explain_border = influence_ui.show_objectives_explain and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
   love.graphics.setColor(unpack(explain_fill))
   love.graphics.rectangle("fill", explain_button.x, explain_button.y, explain_button.w, explain_button.h, 7, 7)
   love.graphics.setColor(unpack(explain_border))
   love.graphics.rectangle("line", explain_button.x, explain_button.y, explain_button.w, explain_button.h, 7, 7)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(show_objectives_explain and "Hide Objectives" or "Explain Objectives", explain_button.x + 4, explain_button.y + 6, explain_button.w - 8, "center")
+  love.graphics.printf(influence_ui.show_objectives_explain and "Hide Objectives" or "Explain Objectives", explain_button.x + 4, explain_button.y + 6, explain_button.w - 8, "center")
 end
 
 local function draw_influence_details(rect, forecast_ctx)
   local snapshot = forecast_ctx.active_snapshot
-  local value = snapshot[focused_stat]
-  local help = INFLUENCE_HELP[focused_stat]
-  local status, color = get_stat_status(focused_stat, value)
-  local coupling_signal = terraforming_state:get_source_coupling_signal(focused_stat, snapshot)
-  local coupling_rule_text = terraforming_state:get_coupling_rule_text(focused_stat)
+  local value = snapshot[influence_ui.focused_stat]
+  local help = INFLUENCE_HELP[influence_ui.focused_stat]
+  local status, color = get_stat_status(influence_ui.focused_stat, value)
+  local coupling_signal = terraforming_state:get_source_coupling_signal(influence_ui.focused_stat, snapshot)
+  local coupling_rule_text = terraforming_state:get_coupling_rule_text(influence_ui.focused_stat)
   local incoming_edges = {}
   for _, edge in ipairs(INFLUENCE_EDGES) do
-    if edge.target == focused_stat then
+    if edge.target == influence_ui.focused_stat then
       table.insert(incoming_edges, edge)
     end
   end
-  local outgoing_edges = get_edges_from_stat(focused_stat)
+  local outgoing_edges = get_edges_from_stat(influence_ui.focused_stat)
   local incoming_total = 0
   local incoming_active = 0
   for _, edge in ipairs(incoming_edges) do
@@ -2765,7 +2707,7 @@ local function draw_influence_details(rect, forecast_ctx)
   local line_y = rect.y + 14
   local bottom_y = rect.y + rect.h - 14
 
-  line_y = draw_wrapped_line("Focused Primitive: " .. STAT_LABELS[focused_stat], text_x, line_y, text_w, { 1, 1, 1, 1 }, 16)
+  line_y = draw_wrapped_line("Focused Primitive: " .. STAT_LABELS[influence_ui.focused_stat], text_x, line_y, text_w, { 1, 1, 1, 1 }, 16)
   line_y = draw_wrapped_line("Reference: " .. mode_label, text_x, line_y + 2, text_w, color, 16)
   line_y = draw_wrapped_line("Notch: " .. format_signed(value) .. " (" .. status .. ")", text_x, line_y + 2, text_w, color, 16)
   line_y = draw_wrapped_line(help.summary, text_x, line_y + 2, text_w, { 1, 1, 1, 1 }, 16)
@@ -2796,7 +2738,7 @@ local function draw_influence_details(rect, forecast_ctx)
   )
 
   if show_real_world_values and (line_y + 18) < bottom_y then
-    draw_wrapped_line(get_real_world_mapping(focused_stat, value), text_x, line_y + 4, text_w, { 0.75, 0.87, 0.95, 1 }, 16)
+    draw_wrapped_line(get_real_world_mapping(influence_ui.focused_stat, value), text_x, line_y + 4, text_w, { 0.75, 0.87, 0.95, 1 }, 16)
   end
 end
 
@@ -2864,7 +2806,7 @@ local function draw_forecast_panel(rect, forecast_ctx)
 
   for _, button in ipairs(mode_buttons) do
     local active = forecast_ctx.active_mode == button.id
-    local hovered = hovered_forecast_mode == button.id
+    local hovered = influence_ui.hovered_forecast_mode == button.id
     local fill = active and { 0.24, 0.42, 0.26, 0.98 } or { 0.13, 0.18, 0.25, 0.98 }
     local border = active and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
     if hovered and not active then
@@ -2980,17 +2922,17 @@ local function draw_influence_cards(layout)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf("Preview Selector (Do Nothing or card). Use Current above to clear preview.", rect.x + 10, rect.y + 10, rect.w - 20, "left")
 
-  local turn_fill = show_turn_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
-  if hovered_turn_explain_button and not show_turn_explain then
+  local turn_fill = influence_ui.show_turn_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
+  if influence_ui.hovered_turn_explain_button and not influence_ui.show_turn_explain then
     turn_fill = { 0.18, 0.24, 0.33, 1 }
   end
-  local turn_border = show_turn_explain and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
+  local turn_border = influence_ui.show_turn_explain and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
   love.graphics.setColor(unpack(turn_fill))
   love.graphics.rectangle("fill", explain_button.x, explain_button.y, explain_button.w, explain_button.h, 7, 7)
   love.graphics.setColor(unpack(turn_border))
   love.graphics.rectangle("line", explain_button.x, explain_button.y, explain_button.w, explain_button.h, 7, 7)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(show_turn_explain and "Hide Turn" or "Explain Next Turn", explain_button.x + 4, explain_button.y + 6, explain_button.w - 8, "center")
+  love.graphics.printf(influence_ui.show_turn_explain and "Hide Turn" or "Explain Next Turn", explain_button.x + 4, explain_button.y + 6, explain_button.w - 8, "center")
 
   for i, card_rect in ipairs(card_rects) do
     local option = card_rect.option
@@ -2999,12 +2941,12 @@ local function draw_influence_cards(layout)
     local selected = false
     local affordable = true
     if is_do_nothing then
-      selected = forecast_mode == "do_nothing"
+      selected = influence_ui.forecast_mode == "do_nothing"
     else
-      selected = forecast_mode == "selected" and selected_forecast_card_index == option.card_index
+      selected = influence_ui.forecast_mode == "selected" and influence_ui.selected_forecast_card_index == option.card_index
       affordable = can_afford(card.cost or 0)
     end
-    local hovered = (hovered_forecast_option_index == i)
+    local hovered = (influence_ui.hovered_forecast_option_index == i)
 
     local fill = selected and { 0.22, 0.38, 0.25, 0.98 } or { 0.12, 0.14, 0.18, 0.98 }
     local border = selected and { 0.64, 0.93, 0.62, 1 } or { 0.48, 0.58, 0.7, 1 }
@@ -3057,10 +2999,10 @@ local function draw_influence_screen()
 
   draw_influence_nodes(layout, forecast_ctx)
   draw_end_objectives_panel(layout, forecast_ctx)
-  if show_graph_explain then
+  if influence_ui.show_graph_explain then
     draw_influence_details(layout.graph_explain_rect, forecast_ctx)
   end
-  if show_turn_explain then
+  if influence_ui.show_turn_explain then
     draw_forecast_panel(layout.turn_explain_rect, forecast_ctx)
   end
   draw_influence_cards(layout)
@@ -3081,19 +3023,13 @@ function Runtime.update(dt)
   end
 
   target:update(dt)
-  sanitize_selection()
+  influence_ui:sanitize_selection(#player_deck.hand)
 
   hovered_card_index = nil
   hovered_draw_pile = false
   hovered_discard_pile = false
   hovered_end_turn = false
-  hovered_influence_stat = nil
-  hovered_forecast_option_index = nil
-  hovered_edge_filter_button = false
-  hovered_forecast_mode = nil
-  hovered_graph_explain_button = false
-  hovered_turn_explain_button = false
-  hovered_objectives_explain_button = false
+  influence_ui:reset_hover_state()
 
   local raw_mx, raw_my = love.mouse.getPosition()
   local has_pointer = true
@@ -3122,14 +3058,14 @@ function Runtime.update(dt)
   if has_pointer and view_mode == "influence" and campaign_state == "playing" then
     local layout = get_influence_layout()
     local toggle_buttons = get_map_toggle_buttons(layout)
-    hovered_edge_filter_button = point_in_rect(mx, my, toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h)
-    hovered_graph_explain_button = point_in_rect(mx, my, toggle_buttons.explain_graph.x, toggle_buttons.explain_graph.y, toggle_buttons.explain_graph.w, toggle_buttons.explain_graph.h)
+    influence_ui.hovered_edge_filter_button = point_in_rect(mx, my, toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h)
+    influence_ui.hovered_graph_explain_button = point_in_rect(mx, my, toggle_buttons.explain_graph.x, toggle_buttons.explain_graph.y, toggle_buttons.explain_graph.w, toggle_buttons.explain_graph.h)
 
     local explain_button = get_preview_explain_button(layout)
-    hovered_turn_explain_button = point_in_rect(mx, my, explain_button.x, explain_button.y, explain_button.w, explain_button.h)
+    influence_ui.hovered_turn_explain_button = point_in_rect(mx, my, explain_button.x, explain_button.y, explain_button.w, explain_button.h)
 
     local objectives_explain_button = get_objectives_explain_button(layout)
-    hovered_objectives_explain_button = point_in_rect(
+    influence_ui.hovered_objectives_explain_button = point_in_rect(
       mx,
       my,
       objectives_explain_button.x,
@@ -3138,11 +3074,11 @@ function Runtime.update(dt)
       objectives_explain_button.h
     )
 
-    if show_turn_explain then
+    if influence_ui.show_turn_explain then
       local forecast_buttons = get_forecast_mode_buttons(layout.turn_explain_rect)
       for _, button in ipairs(forecast_buttons) do
         if point_in_rect(mx, my, button.x, button.y, button.w, button.h) then
-          hovered_forecast_mode = button.id
+          influence_ui.hovered_forecast_mode = button.id
           break
         end
       end
@@ -3151,7 +3087,7 @@ function Runtime.update(dt)
     for _, key in ipairs(STAT_ORDER) do
       local node = layout.nodes[key]
       if point_in_circle(mx, my, node.x, node.y, node.r) then
-        hovered_influence_stat = key
+        influence_ui.hovered_influence_stat = key
         break
       end
     end
@@ -3159,7 +3095,7 @@ function Runtime.update(dt)
     local card_rects = get_influence_card_rects(layout)
     for i, rect in ipairs(card_rects) do
       if point_in_rect(mx, my, rect.x, rect.y, rect.w, rect.h) then
-        hovered_forecast_option_index = i
+        influence_ui.hovered_forecast_option_index = i
         break
       end
     end
@@ -3247,40 +3183,33 @@ function Runtime.keypressed(key)
 
   if view_mode == "influence" then
     if key == "i" then
-      cycle_edge_filter_mode()
+      influence_ui:cycle_edge_filter_mode()
       return
     end
 
     if key == "z" then
-      selected_forecast_card_index = nil
-      forecast_mode = "current"
+      influence_ui:set_current_mode()
       return
     end
 
     if key == "x" then
-      forecast_mode = "do_nothing"
+      influence_ui:set_do_nothing_mode(false)
       return
     end
 
     if key == "p" then
-      if selected_forecast_card_index then
-        forecast_mode = "selected"
-      else
-        forecast_mode = "do_nothing"
-      end
+      influence_ui:set_selected_or_do_nothing_mode()
       return
     end
 
     if key == "c" then
-      selected_forecast_card_index = nil
-      forecast_mode = "current"
+      influence_ui:set_current_mode()
       return
     end
 
     local num = tonumber(key)
     if num and num >= 1 and num <= #player_deck.hand then
-      selected_forecast_card_index = num
-      forecast_mode = "selected"
+      influence_ui:set_selected_mode(num)
     end
     return
   end
@@ -3322,24 +3251,18 @@ function Runtime.mousepressed(x, y, button)
     local layout = get_influence_layout()
     local toggle_buttons = get_map_toggle_buttons(layout)
     if point_in_rect(x, y, toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h) then
-      cycle_edge_filter_mode()
+      influence_ui:cycle_edge_filter_mode()
       return
     end
 
     if point_in_rect(x, y, toggle_buttons.explain_graph.x, toggle_buttons.explain_graph.y, toggle_buttons.explain_graph.w, toggle_buttons.explain_graph.h) then
-      show_graph_explain = not show_graph_explain
-      if show_graph_explain then
-        show_turn_explain = false
-      end
+      influence_ui:toggle_graph_explain()
       return
     end
 
     local explain_button = get_preview_explain_button(layout)
     if point_in_rect(x, y, explain_button.x, explain_button.y, explain_button.w, explain_button.h) then
-      show_turn_explain = not show_turn_explain
-      if show_turn_explain then
-        show_graph_explain = false
-      end
+      influence_ui:toggle_turn_explain()
       return
     end
 
@@ -3352,16 +3275,15 @@ function Runtime.mousepressed(x, y, button)
       objectives_explain_button.w,
       objectives_explain_button.h
     ) then
-      show_objectives_explain = not show_objectives_explain
+      influence_ui:toggle_objectives_explain()
       return
     end
 
-    if show_turn_explain then
+    if influence_ui.show_turn_explain then
       local forecast_buttons = get_forecast_mode_buttons(layout.turn_explain_rect)
       for _, button in ipairs(forecast_buttons) do
         if point_in_rect(x, y, button.x, button.y, button.w, button.h) then
-          selected_forecast_card_index = nil
-          forecast_mode = "current"
+          influence_ui:set_current_mode()
           return
         end
       end
@@ -3370,7 +3292,7 @@ function Runtime.mousepressed(x, y, button)
     for _, key in ipairs(STAT_ORDER) do
       local node = layout.nodes[key]
       if point_in_circle(x, y, node.x, node.y, node.r) then
-        focused_stat = key
+        influence_ui.focused_stat = key
         return
       end
     end
@@ -3380,11 +3302,9 @@ function Runtime.mousepressed(x, y, button)
       if point_in_rect(x, y, rect.x, rect.y, rect.w, rect.h) then
         local option = rect.option
         if option.kind == "do_nothing" then
-          selected_forecast_card_index = nil
-          forecast_mode = "do_nothing"
+          influence_ui:set_do_nothing_mode(true)
         else
-          selected_forecast_card_index = option.card_index
-          forecast_mode = "selected"
+          influence_ui:set_selected_mode(option.card_index)
         end
         return
       end
