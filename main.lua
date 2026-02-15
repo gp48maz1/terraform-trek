@@ -1,4 +1,6 @@
 local Deck = require("deck")
+local Card = require("card")
+local CardTypes = require("card_types")
 local TerraformingTarget = require("terraforming_target")
 local DrawHelpers = require("draw_helpers")
 local Background = require("background")
@@ -153,6 +155,40 @@ local END_TURN_UI = {
   height = 50,
   x_padding = 30,
   y = 520
+}
+
+local function detect_launch_mode()
+  local env_mode = string.lower(os.getenv("TERRAFORM_TREK_MODE") or os.getenv("TT_MODE") or "")
+  if env_mode == "cards" or env_mode == "card_library" or env_mode == "library" then
+    return "cards"
+  end
+
+  local argv = rawget(_G, "arg")
+  if type(argv) == "table" then
+    for _, value in ipairs(argv) do
+      local token = string.lower(tostring(value))
+      if token == "cards" or token == "card_library" or token == "card-library" or token == "library" then
+        return "cards"
+      end
+    end
+  end
+
+  return "game"
+end
+
+local launch_mode = detect_launch_mode() -- game | cards
+
+local initialize_card_library_state
+
+local card_library_state = {
+  cards = {},
+  topics = { "All" },
+  selected_topic = "All",
+  selected_card_id = nil,
+  hovered_topic = nil,
+  hovered_card_id = nil,
+  scroll_offset = 0,
+  max_scroll = 0
 }
 
 local function copy_stats(source)
@@ -797,6 +833,14 @@ end
 function love.load()
   love.math.setRandomSeed(os.time())
   Background.load()
+
+  if launch_mode == "cards" then
+    initialize_card_library_state()
+    if love.window and love.window.setTitle then
+      love.window.setTitle("Terraform Trek - Card Library")
+    end
+    return
+  end
 
   player_deck = Deck:new()
   target = TerraformingTarget:new()
@@ -1462,6 +1506,523 @@ local function calculate_profit_flow_totals(active_industries, profit_breakdown,
     pop_bonus_total = pop_bonus_total,
     income_total = income_total
   }
+end
+
+local CARD_LIBRARY_TOPIC_ORDER = {
+  "Terraform",
+  "Industry",
+  "Chance",
+  "Power",
+  "Heat",
+  "Air",
+  "Water",
+  "Soil",
+  "Economy",
+  "Draw",
+  "Stabilize",
+  "Stat Change"
+}
+
+local CATEGORY_SORT_ORDER = {
+  Terraform = 1,
+  Industry = 2,
+  Chance = 3,
+  Power = 4
+}
+
+local function get_card_library_topics_for_card(card_data)
+  local topics = {}
+  local function add(topic)
+    if topic and topic ~= "" then
+      topics[topic] = true
+    end
+  end
+
+  add(card_data.category)
+  local properties = card_data.properties or {}
+  local changes = properties.stat_changes
+  if changes then
+    add("Stat Change")
+    for stat_key, _ in pairs(changes) do
+      add(STAT_LABELS[stat_key] or stat_key)
+    end
+  end
+
+  if card_data.effect_fn_name == "install_industry" then
+    add("Economy")
+    add("Industry")
+  elseif card_data.effect_fn_name == "draw_cards" then
+    add("Draw")
+  elseif card_data.effect_fn_name == "stabilize_system" then
+    add("Stabilize")
+  end
+
+  return topics
+end
+
+initialize_card_library_state = function()
+  local card_ids = CardTypes.getAllCardIds()
+  table.sort(card_ids)
+
+  local entries = {}
+  local topic_presence = {}
+  for _, card_id in ipairs(card_ids) do
+    local card_data = CardTypes.createCardData(card_id)
+    local topics = get_card_library_topics_for_card(card_data)
+    for topic, _ in pairs(topics) do
+      topic_presence[topic] = true
+    end
+    table.insert(entries, {
+      id = card_id,
+      data = card_data,
+      card = Card:new(card_data),
+      topics = topics
+    })
+  end
+
+  table.sort(entries, function(a, b)
+    local ca = CATEGORY_SORT_ORDER[a.data.category] or 99
+    local cb = CATEGORY_SORT_ORDER[b.data.category] or 99
+    if ca == cb then
+      return string.lower(a.data.name) < string.lower(b.data.name)
+    end
+    return ca < cb
+  end)
+
+  local topics = { "All" }
+  for _, topic in ipairs(CARD_LIBRARY_TOPIC_ORDER) do
+    if topic_presence[topic] then
+      table.insert(topics, topic)
+      topic_presence[topic] = nil
+    end
+  end
+
+  local extra_topics = {}
+  for topic, _ in pairs(topic_presence) do
+    table.insert(extra_topics, topic)
+  end
+  table.sort(extra_topics)
+  for _, topic in ipairs(extra_topics) do
+    table.insert(topics, topic)
+  end
+
+  card_library_state.cards = entries
+  card_library_state.topics = topics
+  card_library_state.selected_topic = "All"
+  card_library_state.selected_card_id = entries[1] and entries[1].id or nil
+  card_library_state.hovered_topic = nil
+  card_library_state.hovered_card_id = nil
+  card_library_state.scroll_offset = 0
+  card_library_state.max_scroll = 0
+end
+
+local function get_card_library_filtered_entries()
+  local filtered = {}
+  local selected_topic = card_library_state.selected_topic
+  for _, entry in ipairs(card_library_state.cards) do
+    if selected_topic == "All" or entry.topics[selected_topic] then
+      table.insert(filtered, entry)
+    end
+  end
+  return filtered
+end
+
+local function ensure_card_library_selection(filtered)
+  if #filtered == 0 then
+    card_library_state.selected_card_id = nil
+    return
+  end
+
+  local selected_id = card_library_state.selected_card_id
+  for _, entry in ipairs(filtered) do
+    if entry.id == selected_id then
+      return
+    end
+  end
+  card_library_state.selected_card_id = filtered[1].id
+end
+
+local function get_card_library_layout()
+  local sw, sh = love.graphics.getDimensions()
+  local margin = 20
+  local filter_y = 88
+  local filter_h = 28
+  local filter_gap = 8
+  local x = margin
+  local y = filter_y
+  local font = love.graphics.getFont()
+  local filter_rects = {}
+
+  for _, topic in ipairs(card_library_state.topics) do
+    local w = math.max(84, font:getWidth(topic) + 22)
+    if x + w > sw - margin then
+      x = margin
+      y = y + filter_h + filter_gap
+    end
+    table.insert(filter_rects, {
+      topic = topic,
+      x = x,
+      y = y,
+      w = w,
+      h = filter_h
+    })
+    x = x + w + filter_gap
+  end
+
+  local filters_bottom = y + filter_h
+  local content_top = filters_bottom + 12
+  local detail_w = math.max(300, math.floor(sw * 0.29))
+  local content_h = math.max(220, sh - content_top - 20)
+  local grid_w = sw - (margin * 2) - detail_w - 12
+  if grid_w < 380 then
+    detail_w = math.max(260, math.floor(sw * 0.34))
+    grid_w = sw - (margin * 2) - detail_w - 12
+  end
+  local grid_rect = {
+    x = margin,
+    y = content_top,
+    w = grid_w,
+    h = content_h
+  }
+  local detail_rect = {
+    x = grid_rect.x + grid_rect.w + 12,
+    y = content_top,
+    w = detail_w,
+    h = content_h
+  }
+
+  return {
+    filter_rects = filter_rects,
+    grid_rect = grid_rect,
+    detail_rect = detail_rect
+  }
+end
+
+local function get_card_library_card_rects(layout, filtered_entries)
+  local grid_rect = layout.grid_rect
+  local inner_pad = 10
+  local card_w = 150
+  local card_h = 225
+  local gap_x = 14
+  local gap_y = 16
+  local usable_w = math.max(1, grid_rect.w - (inner_pad * 2))
+  local cols = math.max(1, math.floor((usable_w + gap_x) / (card_w + gap_x)))
+  local used_w = cols * card_w + (cols - 1) * gap_x
+  local start_x = grid_rect.x + inner_pad + math.max(0, math.floor((usable_w - used_w) / 2))
+  local start_y = grid_rect.y + inner_pad - card_library_state.scroll_offset
+
+  local rects = {}
+  for i, entry in ipairs(filtered_entries) do
+    local row = math.floor((i - 1) / cols)
+    local col = (i - 1) % cols
+    local x = start_x + col * (card_w + gap_x)
+    local y = start_y + row * (card_h + gap_y)
+    table.insert(rects, {
+      x = x,
+      y = y,
+      w = card_w,
+      h = card_h,
+      entry = entry
+    })
+  end
+
+  local rows = math.ceil(#filtered_entries / cols)
+  local total_h = 0
+  if rows > 0 then
+    total_h = rows * card_h + (rows - 1) * gap_y
+  end
+  local max_scroll = math.max(0, total_h - (grid_rect.h - inner_pad * 2))
+  return rects, max_scroll
+end
+
+local function get_card_library_selected_entry(filtered_entries)
+  for _, entry in ipairs(filtered_entries) do
+    if entry.id == card_library_state.selected_card_id then
+      return entry
+    end
+  end
+  return filtered_entries[1]
+end
+
+local function update_card_library_hover_state()
+  local mx, my = love.mouse.getPosition()
+  local layout = get_card_library_layout()
+  local filtered_entries = get_card_library_filtered_entries()
+  ensure_card_library_selection(filtered_entries)
+  local card_rects, max_scroll = get_card_library_card_rects(layout, filtered_entries)
+  card_library_state.max_scroll = max_scroll
+  card_library_state.scroll_offset = clamp_value(card_library_state.scroll_offset, 0, max_scroll)
+
+  card_library_state.hovered_topic = nil
+  card_library_state.hovered_card_id = nil
+
+  for _, filter_rect in ipairs(layout.filter_rects) do
+    if point_in_rect(mx, my, filter_rect.x, filter_rect.y, filter_rect.w, filter_rect.h) then
+      card_library_state.hovered_topic = filter_rect.topic
+      break
+    end
+  end
+
+  local grid_rect = layout.grid_rect
+  for _, rect in ipairs(card_rects) do
+    local visible = rect.y + rect.h >= grid_rect.y and rect.y <= grid_rect.y + grid_rect.h
+    if visible and point_in_rect(mx, my, rect.x, rect.y, rect.w, rect.h) then
+      card_library_state.hovered_card_id = rect.entry.id
+      break
+    end
+  end
+end
+
+local function draw_card_library_screen()
+  local layout = get_card_library_layout()
+  local filtered_entries = get_card_library_filtered_entries()
+  ensure_card_library_selection(filtered_entries)
+  local card_rects, max_scroll = get_card_library_card_rects(layout, filtered_entries)
+  card_library_state.max_scroll = max_scroll
+  card_library_state.scroll_offset = clamp_value(card_library_state.scroll_offset, 0, max_scroll)
+  local selected_entry = get_card_library_selected_entry(filtered_entries)
+
+  Background.draw_fill()
+  Background.draw_stars()
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("Card Library", 16, 12)
+  love.graphics.print("Browse all cards or filter by topic. Click a card to inspect details.", 16, 32)
+  love.graphics.print("Filters + mouse wheel. Press ESC to quit this mode.", 16, 52)
+
+  for _, filter_rect in ipairs(layout.filter_rects) do
+    local active = card_library_state.selected_topic == filter_rect.topic
+    local hovered = card_library_state.hovered_topic == filter_rect.topic
+    local fill = active and { 0.24, 0.42, 0.26, 0.98 } or { 0.13, 0.18, 0.25, 0.98 }
+    local border = active and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
+    if hovered and not active then
+      fill = { 0.18, 0.24, 0.33, 0.98 }
+    end
+    love.graphics.setColor(unpack(fill))
+    love.graphics.rectangle("fill", filter_rect.x, filter_rect.y, filter_rect.w, filter_rect.h, 7, 7)
+    love.graphics.setColor(unpack(border))
+    love.graphics.rectangle("line", filter_rect.x, filter_rect.y, filter_rect.w, filter_rect.h, 7, 7)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.printf(filter_rect.topic, filter_rect.x + 4, filter_rect.y + 6, filter_rect.w - 8, "center")
+  end
+
+  local grid_rect = layout.grid_rect
+  love.graphics.setColor(0.06, 0.08, 0.12, 0.95)
+  love.graphics.rectangle("fill", grid_rect.x, grid_rect.y, grid_rect.w, grid_rect.h, 10, 10)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  love.graphics.rectangle("line", grid_rect.x, grid_rect.y, grid_rect.w, grid_rect.h, 10, 10)
+  love.graphics.setColor(0.75, 0.87, 0.95, 1)
+  love.graphics.printf(
+    "Cards: " .. tostring(#filtered_entries) .. "/" .. tostring(#card_library_state.cards) .. "  |  Topic: " .. card_library_state.selected_topic,
+    grid_rect.x + 10,
+    grid_rect.y + 8,
+    grid_rect.w - 20,
+    "left"
+  )
+
+  local scissor_y = grid_rect.y + 28
+  local scissor_h = grid_rect.h - 36
+  love.graphics.setScissor(grid_rect.x + 2, scissor_y, grid_rect.w - 4, scissor_h)
+  for _, rect in ipairs(card_rects) do
+    local visible = rect.y + rect.h >= scissor_y and rect.y <= scissor_y + scissor_h
+    if visible then
+      rect.entry.card:draw(rect.x, rect.y)
+      local selected = card_library_state.selected_card_id == rect.entry.id
+      local hovered = card_library_state.hovered_card_id == rect.entry.id
+      if selected or hovered then
+        local color = selected and { 0.64, 0.94, 0.63, 1 } or { 0.7, 0.82, 0.98, 1 }
+        love.graphics.setColor(unpack(color))
+        love.graphics.setLineWidth(selected and 3 or 2)
+        love.graphics.rectangle("line", rect.x - 3, rect.y - 3, rect.w + 6, rect.h + 6, 6, 6)
+        love.graphics.setLineWidth(1)
+      end
+    end
+  end
+  love.graphics.setScissor()
+
+  if card_library_state.max_scroll > 0 then
+    local track_x = grid_rect.x + grid_rect.w - 8
+    local track_y = scissor_y + 4
+    local track_h = scissor_h - 8
+    local thumb_h = math.max(30, math.floor(track_h * (scissor_h / (scissor_h + card_library_state.max_scroll))))
+    local thumb_t = card_library_state.scroll_offset / card_library_state.max_scroll
+    local thumb_y = track_y + math.floor((track_h - thumb_h) * thumb_t)
+    love.graphics.setColor(0.16, 0.22, 0.3, 0.95)
+    love.graphics.rectangle("fill", track_x, track_y, 4, track_h, 3, 3)
+    love.graphics.setColor(0.65, 0.78, 0.95, 0.95)
+    love.graphics.rectangle("fill", track_x, thumb_y, 4, thumb_h, 3, 3)
+  end
+
+  local detail_rect = layout.detail_rect
+  love.graphics.setColor(0.06, 0.08, 0.12, 0.95)
+  love.graphics.rectangle("fill", detail_rect.x, detail_rect.y, detail_rect.w, detail_rect.h, 10, 10)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  love.graphics.rectangle("line", detail_rect.x, detail_rect.y, detail_rect.w, detail_rect.h, 10, 10)
+
+  local text_x = detail_rect.x + 12
+  local text_w = detail_rect.w - 24
+  local y = detail_rect.y + 12
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("Card Detail", text_x, y, text_w, "left")
+  y = y + 22
+
+  if not selected_entry then
+    love.graphics.setColor(0.75, 0.87, 0.95, 1)
+    love.graphics.printf("No cards match this filter.", text_x, y, text_w, "left")
+    return
+  end
+
+  local data = selected_entry.data
+  local topic_list = {}
+  for topic, _ in pairs(selected_entry.topics) do
+    table.insert(topic_list, topic)
+  end
+  table.sort(topic_list)
+
+  y = draw_wrapped_line(data.name .. "  (Cost " .. tostring(data.cost or 0) .. ")", text_x, y, text_w, { 1, 1, 1, 1 }, 16)
+  y = draw_wrapped_line("Category: " .. tostring(data.category), text_x, y + 2, text_w, { 0.75, 0.87, 0.95, 1 }, 16)
+  y = draw_wrapped_line("ID: " .. tostring(data.id), text_x, y, text_w, { 0.75, 0.87, 0.95, 1 }, 16)
+  y = draw_wrapped_line("Topics: " .. table.concat(topic_list, ", "), text_x, y, text_w, { 0.75, 0.87, 0.95, 1 }, 16)
+  y = draw_wrapped_line("Description: " .. tostring(data.description), text_x, y + 6, text_w, { 1, 1, 1, 1 }, 16)
+  y = draw_wrapped_line("Effect: " .. tostring(data.effect_fn_name), text_x, y + 6, text_w, { 0.75, 0.87, 0.95, 1 }, 16)
+
+  local properties = data.properties or {}
+  if properties.stat_changes then
+    local change_parts = {}
+    for _, key in ipairs(STAT_ORDER) do
+      local delta = properties.stat_changes[key]
+      if delta and delta ~= 0 then
+        table.insert(change_parts, (STAT_LABELS[key] or key) .. " " .. format_signed(delta))
+      end
+    end
+    if #change_parts > 0 then
+      y = draw_wrapped_line("Stat changes: " .. table.concat(change_parts, ", "), text_x, y, text_w, { 1, 1, 1, 1 }, 16)
+    end
+  end
+
+  if properties.draw_amount then
+    y = draw_wrapped_line("Draw amount: " .. tostring(properties.draw_amount), text_x, y, text_w, { 1, 1, 1, 1 }, 16)
+  end
+
+  if properties.industry_def then
+    local industry = properties.industry_def
+    y = draw_wrapped_line(
+      "Industry: base " .. tostring(industry.base_profit or 0) ..
+        ", pop factor " .. tostring(industry.population_factor or 0) ..
+        ", HP " .. tostring(industry.max_health or industry.health or 0),
+      text_x,
+      y + 4,
+      text_w,
+      { 1, 1, 1, 1 },
+      16
+    )
+    if industry.damage_rules and #industry.damage_rules > 0 then
+      y = draw_wrapped_line("Damage rules:", text_x, y + 2, text_w, { 0.75, 0.87, 0.95, 1 }, 16)
+      for _, rule in ipairs(industry.damage_rules) do
+        local stat_label = STAT_LABELS[rule.stat] or tostring(rule.stat)
+        local conditions = {}
+        if rule.min ~= nil then
+          table.insert(conditions, stat_label .. " >= " .. tostring(rule.min))
+        end
+        if rule.max ~= nil then
+          table.insert(conditions, stat_label .. " <= " .. tostring(rule.max))
+        end
+        local cond_text = table.concat(conditions, " and ")
+        local rule_text = "- " .. cond_text .. ": -" .. tostring(rule.damage or 1) .. " HP"
+        if rule.reason and rule.reason ~= "" then
+          rule_text = rule_text .. " (" .. rule.reason .. ")"
+        end
+        y = draw_wrapped_line(rule_text, text_x, y, text_w, { 1, 1, 1, 1 }, 16)
+        if y > detail_rect.y + detail_rect.h - 20 then
+          break
+        end
+      end
+    end
+  end
+end
+
+local function handle_card_library_mousepressed(x, y)
+  local layout = get_card_library_layout()
+  local filtered_entries = get_card_library_filtered_entries()
+  ensure_card_library_selection(filtered_entries)
+  local card_rects, max_scroll = get_card_library_card_rects(layout, filtered_entries)
+  card_library_state.max_scroll = max_scroll
+  card_library_state.scroll_offset = clamp_value(card_library_state.scroll_offset, 0, max_scroll)
+
+  for _, filter_rect in ipairs(layout.filter_rects) do
+    if point_in_rect(x, y, filter_rect.x, filter_rect.y, filter_rect.w, filter_rect.h) then
+      card_library_state.selected_topic = filter_rect.topic
+      card_library_state.scroll_offset = 0
+      local refreshed = get_card_library_filtered_entries()
+      ensure_card_library_selection(refreshed)
+      return
+    end
+  end
+
+  local grid_rect = layout.grid_rect
+  for _, rect in ipairs(card_rects) do
+    local visible = rect.y + rect.h >= grid_rect.y and rect.y <= grid_rect.y + grid_rect.h
+    if visible and point_in_rect(x, y, rect.x, rect.y, rect.w, rect.h) then
+      card_library_state.selected_card_id = rect.entry.id
+      return
+    end
+  end
+end
+
+local function handle_card_library_wheel(y)
+  local step = 44
+  card_library_state.scroll_offset = clamp_value(
+    card_library_state.scroll_offset - y * step,
+    0,
+    card_library_state.max_scroll
+  )
+end
+
+local function handle_card_library_keypressed(key)
+  if key == "escape" then
+    love.event.quit()
+    return
+  end
+
+  if key == "up" then
+    handle_card_library_wheel(1)
+    return
+  elseif key == "down" then
+    handle_card_library_wheel(-1)
+    return
+  end
+
+  local topics = card_library_state.topics
+  local current_index = 1
+  for i, topic in ipairs(topics) do
+    if topic == card_library_state.selected_topic then
+      current_index = i
+      break
+    end
+  end
+
+  if key == "left" then
+    current_index = current_index - 1
+    if current_index < 1 then
+      current_index = #topics
+    end
+    card_library_state.selected_topic = topics[current_index]
+    card_library_state.scroll_offset = 0
+    local filtered = get_card_library_filtered_entries()
+    ensure_card_library_selection(filtered)
+    return
+  elseif key == "right" then
+    current_index = current_index + 1
+    if current_index > #topics then
+      current_index = 1
+    end
+    card_library_state.selected_topic = topics[current_index]
+    card_library_state.scroll_offset = 0
+    local filtered = get_card_library_filtered_entries()
+    ensure_card_library_selection(filtered)
+    return
+  end
 end
 
 local function draw_end_objectives_explain_overlay(
@@ -2298,6 +2859,11 @@ local function draw_influence_screen()
 end
 
 function love.update(dt)
+  if launch_mode == "cards" then
+    update_card_library_hover_state()
+    return
+  end
+
   target:update(dt)
   sanitize_selection()
 
@@ -2376,6 +2942,11 @@ function love.update(dt)
 end
 
 function love.draw()
+  if launch_mode == "cards" then
+    draw_card_library_screen()
+    return
+  end
+
   if view_mode == "gameplay" then
     Background.draw_fill()
     Background.draw_stars()
@@ -2396,6 +2967,11 @@ function love.draw()
 end
 
 function love.keypressed(key)
+  if launch_mode == "cards" then
+    handle_card_library_keypressed(key)
+    return
+  end
+
   if key == "r" then
     start_campaign()
     return
@@ -2481,6 +3057,11 @@ end
 
 function love.mousepressed(x, y, button)
   if button ~= 1 then
+    return
+  end
+
+  if launch_mode == "cards" then
+    handle_card_library_mousepressed(x, y)
     return
   end
 
@@ -2576,4 +3157,11 @@ function love.mousepressed(x, y, button)
   if card_index then
     try_play_card(card_index)
   end
+end
+
+function love.wheelmoved(_, y)
+  if launch_mode ~= "cards" then
+    return
+  end
+  handle_card_library_wheel(y)
 end

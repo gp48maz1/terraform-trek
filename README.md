@@ -67,6 +67,20 @@ flowchart TD
 - `N`: go to next world after a world victory
 - `R`: restart run
 
+### Card Library Mode
+
+A separate launch mode is available for browsing all cards and filtering by topic.
+
+- Launch commands:
+  - `TERRAFORM_TREK_MODE=cards love .`
+  - `love . cards`
+- Controls:
+  - Click a topic chip to filter cards
+  - Click a card to inspect details
+  - Mouse wheel or `Up/Down` to scroll
+  - `Left/Right` to cycle topics
+  - `Esc` to quit
+
 ## Running Locally
 
 To run Terraform Trek on your local machine using LÖVE, follow these steps:
@@ -91,6 +105,7 @@ A script is provided to easily launch the game.
     2.  Open your terminal, navigate to the `terraform-trek` project directory.
     3.  Make the script executable by running: `chmod +x run_local.sh`
     4.  Run the game using: `./run_local.sh`
+    5.  Run the card library using: `./run_cards.sh`
 
 *   **Windows:**
     1.  Create a file named `run_local.bat` in the `terraform-trek` project directory.
@@ -103,3 +118,4 @@ A script is provided to easily launch the game.
         ```
     3.  Save the file.
     4.  Double-click `run_local.bat` to start the game. The `pause` command keeps the console window open if errors occur.
+    5.  Double-click `run_cards.bat` to start card library mode.
