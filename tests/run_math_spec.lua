@@ -10,6 +10,7 @@ love = {
 local PreviewSpec = require("tests.preview_spec")
 local ForecastTraceSpec = require("tests.forecast_trace_spec")
 local ActionApplierSpec = require("tests.action_applier_spec")
+local InfluenceUIStateSpec = require("tests.influence_ui_state_spec")
 
 local function run_section(name, fn)
   print("")
@@ -33,6 +34,10 @@ failed_total = failed_total + f2
 local p3, f3 = run_section("Action Applier Spec", ActionApplierSpec.run)
 passed_total = passed_total + p3
 failed_total = failed_total + f3
+
+local p4, f4 = run_section("Influence UI State Spec", InfluenceUIStateSpec.run)
+passed_total = passed_total + p4
+failed_total = failed_total + f4
 
 print("")
 print(string.format("math spec suite: %d scenario(s) passed, %d failed", passed_total, failed_total))
