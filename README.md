@@ -10,10 +10,16 @@ The current gameplay prototype is a simple card-driven terraforming system:
   - `Air` and `Soil`: range `-10` to `0` (one-directional health; `0` is ideal)
 - A target value for each primitive per world
 - One output meter: `Habitability`
-- End-turn hazards (intent shown in the HUD)
+- End-turn hazards as categorized "incoming cards" (shown in HUD + in-world mini card)
+- Magnetosphere modifier (`Level 1-4`) that blocks spaceborne hazard deltas by level amount per affected primitive
+  - Example: hazard `Water +2` with magnetosphere `L1` becomes `Water +1`; with `L3` becomes `Water +0`
+  - Non-space hazards bypass magnetosphere
 - End-turn coupling rules:
-  - Bipolar stats (`Heat`, `Water`) couple when `|value-target| >= 4`
-  - One-directional stats (`Air`, `Soil`) emit stress when far below target (`<= target-6`), support near target (`>= target-3`), and are neutral in the middle
+  - All primitives now use the same source-quality signal based on absolute distance from target
+  - Signal mapping (`|value-target|`): `0=>+3`, `1=>+2`, `2=>+1`, `3..5=>0`, `6=>-1`, `7=>-2`, `8=>-3`, `9=>-4`, `>=10=>-5`
+  - Positive signal supports linked primitives; negative signal stresses linked primitives
+  - Default mode applies raw per-edge coupling (no per-edge target cap)
+  - Optional second-pass cap is available via `cap_coupling_at_target=true` in world/state config (caps net crossing at target after summing all edge modifiers)
 - End objectives:
   - `Population` is turn-based: `+1 base`, plus per-primitive quality (`bad=-1`, `ok=0`, `good=+1`), plus synergy bonus (`+2/+3/+4` for `2/3/4` good primitives)
   - `Profit` is industry-driven: installed industries generate income each turn if they survive environmental damage checks
@@ -81,9 +87,29 @@ A separate launch mode is available for browsing all cards and filtering by topi
   - `Left/Right` to cycle topics
   - `Esc` to quit
 
+
+## Refactor Baseline (Current)
+
+- `main.lua` is now callback orchestration only.
+- Runtime behavior is currently hosted in `app/legacy_runtime.lua` for behavior-preserving extraction.
+- New module roots are in place: `app/`, `scenes/`, `systems/`, `content/`, `domain/`, `run/`, `ui/layout/`, `ui/components/`.
+- Architecture details: `/Users/garypeters/Documents/GitHub/terraform-trek/ARCHITECTURE.md`.
+- Deterministic characterization harness: `lua tests/run_characterization.lua`.
+- Math test suite: `lua tests/run_math_suite.lua`.
+- Plain-English scenario spec suite: `lua tests/run_math_spec.lua`.
+- `run_math_spec` prints `Scenario / GIVEN / WHEN / THEN` lines so math mismatches are readable without digging through code.
+- Forecast-mode edge badges in Influence view are sourced from the forecast-step coupling trace (not recomputed from final projected stats).
+  - `Current` mode edges come from live snapshot coupling.
+  - `Do Nothing` / `Selected Card` edges come from each forecast summary's `coupling_edge_deltas`.
+
 ## Running Locally
 
 To run Terraform Trek on your local machine using LÖVE, follow these steps:
+
+### Window Baseline
+
+- The game now launches with a mobile-landscape reference window (`1728x798`, 19.5:9) by default.
+- Gameplay and Influence screens render through a fixed virtual viewport with safe-area margins and letterboxing behavior.
 
 ### 1. Find Your LÖVE Installation Path
 

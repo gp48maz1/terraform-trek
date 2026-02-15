@@ -2,6 +2,9 @@ local TerraformingState = {}
 TerraformingState.__index = TerraformingState
 
 local STAT_KEYS = { "heat", "air", "water", "soil" }
+local MIN_MAGNETOSPHERE_LEVEL = 1
+local MAX_MAGNETOSPHERE_LEVEL = 4
+local DEFAULT_MAGNETOSPHERE_LEVEL = 2
 
 local DEFAULT_TARGETS = {
   heat = 0,
@@ -25,17 +28,98 @@ local DEFAULT_STARTING_RANGES = {
 }
 
 local DEFAULT_HAZARDS = {
-  { name = "Solar Flare", deltas = { heat = 2, air = 1 } },
-  { name = "Upper Atmos Leak", deltas = { air = -2, heat = -1 } },
-  { name = "Flash Freeze", deltas = { heat = -2, water = -2 } },
-  { name = "Dust Storm", deltas = { air = -1, soil = -2 } },
-  { name = "Melt Surge", deltas = { heat = 2, water = 1 } },
-  { name = "Acid Rain", deltas = { water = 2, soil = -2 } },
-  { name = "Spore Bloom", deltas = { soil = 2, air = 1 } },
-  { name = "Dry Front", deltas = { water = -2, soil = -1 } }
+  {
+    id = "solar_flare",
+    name = "Solar Flare",
+    category = "Radiation Burst",
+    origin = "space",
+    magnetosphere_blockable = true,
+    deltas = { heat = 2, air = 1 }
+  },
+  {
+    id = "comet_crash_landing",
+    name = "Comet Crash Landing",
+    category = "Orbital Impact",
+    origin = "space",
+    magnetosphere_blockable = true,
+    deltas = { soil = -2, water = 2 }
+  },
+  {
+    id = "micrometeor_swarm",
+    name = "Micrometeor Swarm",
+    category = "Orbital Debris",
+    origin = "space",
+    magnetosphere_blockable = true,
+    deltas = { air = -1, soil = -1 }
+  },
+  {
+    id = "upper_atmos_leak",
+    name = "Upper Atmos Leak",
+    category = "Atmospheric Loss",
+    origin = "atmospheric",
+    magnetosphere_blockable = false,
+    deltas = { air = -2, heat = -1 }
+  },
+  {
+    id = "flash_freeze",
+    name = "Flash Freeze",
+    category = "Climate Shock",
+    origin = "climate",
+    magnetosphere_blockable = false,
+    deltas = { heat = -2, water = -2 }
+  },
+  {
+    id = "dust_storm",
+    name = "Dust Storm",
+    category = "Aeolian Event",
+    origin = "climate",
+    magnetosphere_blockable = false,
+    deltas = { air = -1, soil = -2 }
+  },
+  {
+    id = "acid_rain",
+    name = "Acid Rain",
+    category = "Chemical Event",
+    origin = "chemical",
+    magnetosphere_blockable = false,
+    deltas = { water = 2, soil = -2 }
+  },
+  {
+    id = "dry_front",
+    name = "Dry Front",
+    category = "Hydrologic Shift",
+    origin = "climate",
+    magnetosphere_blockable = false,
+    deltas = { water = -2, soil = -1 }
+  },
+  {
+    id = "volcanic_outgassing",
+    name = "Volcanic Outgassing",
+    category = "Geologic Surge",
+    origin = "geologic",
+    magnetosphere_blockable = false,
+    deltas = { heat = 2, air = -1, soil = 1 }
+  },
+  {
+    id = "spore_bloom",
+    name = "Spore Bloom",
+    category = "Biological Bloom",
+    origin = "biological",
+    magnetosphere_blockable = false,
+    deltas = { soil = 2, air = 1 }
+  }
 }
 
 local DEFAULT_INDUSTRY_SLOTS = 4
+local COUPLING_EDGE_RULES = {
+  { source = "heat", target = "water", factor = 1 },
+  { source = "heat", target = "soil", factor = 1 },
+  { source = "air", target = "heat", factor = 1 },
+  { source = "air", target = "water", factor = 1 },
+  { source = "water", target = "soil", factor = 1 },
+  { source = "water", target = "air", factor = 1 },
+  { source = "soil", target = "air", factor = 1 }
+}
 
 local function shallow_copy(input)
   local out = {}
@@ -43,6 +127,33 @@ local function shallow_copy(input)
     out[k] = v
   end
   return out
+end
+
+local function normalize_hazard_entry(hazard, index)
+  local item = hazard or {}
+  local origin = item.origin
+  local blockable = item.magnetosphere_blockable
+
+  if blockable == nil then
+    blockable = origin == "space"
+  end
+  if origin == nil then
+    origin = blockable and "space" or "planetary"
+  end
+
+  local category = item.category
+  if not category or category == "" then
+    category = origin == "space" and "Orbital Event" or "Planetary Event"
+  end
+
+  return {
+    id = item.id or ("hazard_" .. tostring(index or 0)),
+    name = item.name or ("Hazard " .. tostring(index or 0)),
+    category = category,
+    origin = origin,
+    magnetosphere_blockable = blockable and true or false,
+    deltas = shallow_copy(item.deltas or {})
+  }
 end
 
 local function copy_damage_rules(rules)
@@ -69,6 +180,35 @@ local function sign(value)
   return 0
 end
 
+local function get_coupling_signal_from_distance(distance)
+  if distance <= 0 then
+    return 3
+  elseif distance <= 1 then
+    return 2
+  elseif distance <= 2 then
+    return 1
+  elseif distance <= 5 then
+    return 0
+  elseif distance >= 10 then
+    return -5
+  end
+
+  local whole = math.floor(distance + 0.0001)
+  return -(whole - 5)
+end
+
+local function edge_key(source_key, target_key)
+  return tostring(source_key) .. "->" .. tostring(target_key)
+end
+
+local function get_edge_delta_from_signal(signal, factor)
+  local strength = math.max(0, math.abs(factor or 1))
+  if strength == 0 then
+    return 0
+  end
+  return signal * strength
+end
+
 local function format_signed(value)
   if value > 0 then
     return "+" .. tostring(value)
@@ -92,6 +232,19 @@ local function make_scaled_deltas(deltas, scale)
     scaled[key] = value * scale
   end
   return scaled
+end
+
+local function reduce_delta_by_block(delta, block_amount)
+  if delta == 0 then
+    return 0, 0
+  end
+
+  local magnitude = math.abs(delta)
+  local reduced = math.max(0, magnitude - math.max(0, block_amount or 0))
+  local direction = delta > 0 and 1 or -1
+  local effective = direction * reduced
+  local blocked = delta - effective
+  return effective, blocked
 end
 
 local function shuffle_in_place(items)
@@ -121,6 +274,11 @@ function TerraformingState.new(config)
   self.goal = config.goal or 24
   self.turn_limit = config.turn_limit or 10
   self.hazard_strength = config.hazard_strength or 1
+  self.magnetosphere_level = clamp(
+    math.floor(config.magnetosphere_level or config.magnetosphere or DEFAULT_MAGNETOSPHERE_LEVEL),
+    MIN_MAGNETOSPHERE_LEVEL,
+    MAX_MAGNETOSPHERE_LEVEL
+  )
   self.target_band = config.target_band or 1
   self.strain_threshold = config.strain_threshold or 4
   self.critical_threshold = config.critical_threshold or 7
@@ -136,6 +294,8 @@ function TerraformingState.new(config)
     self.population_ok_threshold = self.population_good_threshold + 1
   end
   self.max_industry_slots = config.max_industry_slots or DEFAULT_INDUSTRY_SLOTS
+  self.enforce_stat_bounds = config.enforce_stat_bounds == true
+  self.cap_coupling_at_target = config.cap_coupling_at_target == true
   self.turn = 1
   self.status = "ongoing"
   self.habitability = 0
@@ -184,11 +344,18 @@ function TerraformingState.new(config)
 
   self.hazards = {}
   local hazard_source = config.hazards or DEFAULT_HAZARDS
-  for _, hazard in ipairs(hazard_source) do
-    table.insert(self.hazards, {
-      name = hazard.name,
-      deltas = shallow_copy(hazard.deltas)
-    })
+  for i, hazard in ipairs(hazard_source) do
+    table.insert(self.hazards, normalize_hazard_entry(hazard, i))
+  end
+  if #self.hazards == 0 then
+    table.insert(self.hazards, normalize_hazard_entry({
+      id = "quiet_orbit",
+      name = "Quiet Orbit",
+      category = "No Immediate Threat",
+      origin = "space",
+      magnetosphere_blockable = true,
+      deltas = {}
+    }, 1))
   end
   shuffle_in_place(self.hazards)
   self.hazard_index = 1
@@ -228,6 +395,85 @@ function TerraformingState:get_next_hazard()
   return self.hazards[self.hazard_index]
 end
 
+function TerraformingState:get_magnetosphere_level()
+  return self.magnetosphere_level
+end
+
+function TerraformingState:get_magnetosphere_tier(level)
+  local value = clamp(
+    math.floor(level or self.magnetosphere_level or DEFAULT_MAGNETOSPHERE_LEVEL),
+    MIN_MAGNETOSPHERE_LEVEL,
+    MAX_MAGNETOSPHERE_LEVEL
+  )
+  if value >= 4 then
+    return "Strong"
+  elseif value == 3 then
+    return "Stable"
+  elseif value == 2 then
+    return "Thin"
+  end
+  return "Weak"
+end
+
+function TerraformingState:project_hazard(hazard, hazard_strength, magnetosphere_level)
+  local hazard_data = normalize_hazard_entry(hazard or self:get_next_hazard(), self.hazard_index)
+  local strength = math.max(0, math.floor(hazard_strength or self.hazard_strength or 1))
+  local level = clamp(
+    math.floor(magnetosphere_level or self.magnetosphere_level or DEFAULT_MAGNETOSPHERE_LEVEL),
+    MIN_MAGNETOSPHERE_LEVEL,
+    MAX_MAGNETOSPHERE_LEVEL
+  )
+
+  local raw = make_scaled_deltas(hazard_data.deltas, strength)
+  local effective = {}
+  local blocked = {}
+  local blocked_total = 0
+  local has_raw = false
+  local has_effective = false
+  local block_amount = hazard_data.magnetosphere_blockable and level or 0
+
+  for _, key in ipairs(STAT_KEYS) do
+    local raw_delta = raw[key] or 0
+    if raw_delta ~= 0 then
+      has_raw = true
+      local effective_delta = raw_delta
+      local blocked_delta = 0
+      if block_amount > 0 then
+        effective_delta, blocked_delta = reduce_delta_by_block(raw_delta, block_amount)
+      end
+      if effective_delta ~= 0 then
+        effective[key] = effective_delta
+        has_effective = true
+      end
+      if blocked_delta ~= 0 then
+        blocked[key] = blocked_delta
+        blocked_total = blocked_total + math.abs(blocked_delta)
+      end
+    end
+  end
+
+  return {
+    hazard = hazard_data,
+    raw_deltas = raw,
+    effective_deltas = effective,
+    blocked_deltas = blocked,
+    has_raw = has_raw,
+    has_effective = has_effective,
+    fully_blocked = has_raw and not has_effective and block_amount > 0,
+    block_amount = block_amount,
+    blocked_total = blocked_total
+  }
+end
+
+function TerraformingState:preview_next_hazard(opts)
+  opts = opts or {}
+  return self:project_hazard(
+    opts.hazard or self:get_next_hazard(),
+    opts.hazard_strength or self.hazard_strength,
+    opts.magnetosphere_level or self.magnetosphere_level
+  )
+end
+
 function TerraformingState:advance_hazard()
   self.hazard_index = self.hazard_index + 1
   if self.hazard_index > #self.hazards then
@@ -242,7 +488,11 @@ function TerraformingState:apply_stat_changes_to(changes, target_stats, bucket)
     local delta = (changes and changes[key]) or 0
     if delta ~= 0 then
       local before = target_stats[key]
-      target_stats[key] = self:clamp_for_key(key, before + delta)
+      if self.enforce_stat_bounds then
+        target_stats[key] = self:clamp_for_key(key, before + delta)
+      else
+        target_stats[key] = before + delta
+      end
       local real_delta = target_stats[key] - before
       if real_delta ~= 0 then
         applied[key] = real_delta
@@ -508,25 +758,54 @@ function TerraformingState:count_in_band()
 end
 
 function TerraformingState:build_coupling_changes(snapshot)
-  local changes = {}
+  local base_snapshot = snapshot or self.stats
+  local changes, _ = self:compute_coupling(base_snapshot)
+  if self.cap_coupling_at_target then
+    changes = self:cap_coupling_changes_to_targets(base_snapshot, changes)
+  end
+  return changes
+end
 
-  local function apply_rule(source_key, target_key, factor)
-    local signal = self:get_source_coupling_signal(source_key, snapshot)
-    if signal ~= 0 then
-      local delta = signal * factor
-      changes[target_key] = (changes[target_key] or 0) + delta
+function TerraformingState:cap_coupling_changes_to_targets(snapshot, changes)
+  local capped = {}
+  local source = snapshot or self.stats
+
+  for _, key in ipairs(STAT_KEYS) do
+    local delta = (changes and changes[key]) or 0
+    if delta ~= 0 then
+      local value = source[key] or 0
+      local target = self.targets[key] or 0
+      local projected = value + delta
+      if value < target and projected > target then
+        delta = target - value
+      elseif value > target and projected < target then
+        delta = target - value
+      end
+      if delta ~= 0 then
+        capped[key] = delta
+      end
     end
   end
 
-  apply_rule("heat", "water", -1)
-  apply_rule("heat", "soil", -1)
-  apply_rule("air", "heat", 1)
-  apply_rule("air", "water", 1)
-  apply_rule("water", "soil", 1)
-  apply_rule("water", "air", -1)
-  apply_rule("soil", "air", 1)
+  return capped
+end
 
-  return changes
+function TerraformingState:compute_coupling(snapshot)
+  local source_snapshot = snapshot or self.stats
+  local changes = {}
+  local edge_deltas = {}
+
+  for _, rule in ipairs(COUPLING_EDGE_RULES) do
+    local signal = self:get_source_coupling_signal(rule.source, source_snapshot)
+    local applied = get_edge_delta_from_signal(signal, rule.factor)
+    edge_deltas[edge_key(rule.source, rule.target)] = applied
+
+    if applied ~= 0 then
+      changes[rule.target] = (changes[rule.target] or 0) + applied
+    end
+  end
+
+  return changes, edge_deltas
 end
 
 function TerraformingState:is_one_directional_stat(key)
@@ -540,60 +819,41 @@ function TerraformingState:get_source_coupling_signal(source_key, snapshot)
   local value = source_table[source_key] or 0
   local target = self.targets[source_key] or 0
   local delta_from_target = value - target
-
-  if self:is_one_directional_stat(source_key) then
-    if delta_from_target <= -self.one_way_stress_threshold then
-      return -1
-    end
-    if delta_from_target >= -self.one_way_support_threshold then
-      return 1
-    end
-    return 0
-  end
-
-  if math.abs(delta_from_target) >= self.coupling_threshold then
-    return sign(delta_from_target)
-  end
-  return 0
+  local distance = math.abs(delta_from_target)
+  return get_coupling_signal_from_distance(distance)
 end
 
-function TerraformingState:get_coupling_delta_for_edge(source_key, factor, snapshot)
+function TerraformingState:get_coupling_delta_for_edge(source_key, factor, snapshot, target_key)
   local signal = self:get_source_coupling_signal(source_key, snapshot)
-  return signal * (factor or 1)
+  if target_key then
+    local _, edge_deltas = self:compute_coupling(snapshot)
+    local key = edge_key(source_key, target_key)
+    if edge_deltas[key] ~= nil then
+      return edge_deltas[key]
+    end
+  end
+  return get_edge_delta_from_signal(signal, factor)
 end
 
 function TerraformingState:get_coupling_rules_summary()
-  return "Bipolar (Heat/Water): |delta| >= " .. tostring(self.coupling_threshold) ..
-    " activates by side. One-way (Air/Soil): <= target" .. format_signed(-self.one_way_stress_threshold) ..
-    " gives stress, >= target" .. format_signed(-self.one_way_support_threshold) ..
-    " gives support, middle values are neutral."
+  return "Source quality uses |value-target| bands for all primitives: 0=>+3, 1=>+2, 2=>+1, 3-5=>0, 6=>-1, 7=>-2, 8=>-3, 9=>-4, >=10=>-5."
 end
 
 function TerraformingState:get_coupling_rule_text(source_key)
-  if self:is_one_directional_stat(source_key) then
-    local target = self.targets[source_key] or 0
-    local stress_cutoff = target - self.one_way_stress_threshold
-    local support_cutoff = target - self.one_way_support_threshold
-    local neutral_low = stress_cutoff + 1
-    local neutral_high = support_cutoff - 1
-    if neutral_low <= neutral_high then
-      return "Rule: <= " .. format_signed(stress_cutoff) .. " gives stress (-1); >= " ..
-        format_signed(support_cutoff) .. " gives support (+1); " ..
-        format_signed(neutral_low) .. " to " .. format_signed(neutral_high) .. " is neutral (0)."
-    end
-    return "Rule: <= " .. format_signed(stress_cutoff) .. " gives stress (-1); >= " ..
-      format_signed(support_cutoff) .. " gives support (+1)."
-  end
-  return "Rule: |value-target| >= " .. tostring(self.coupling_threshold) ..
-    " activates by side of target; inside the band is neutral (0)."
+  local target = self.targets[source_key] or 0
+  return "Rule: |" .. source_key .. "-target| sets source signal (+3 to -5). Signal > 0 supports linked stats toward target " ..
+    format_signed(target) .. "; signal < 0 stresses linked stats away from target. Per-edge effects are summed before final stat update."
 end
 
 function TerraformingState:forecast_end_turn(base_snapshot, opts)
   opts = opts or {}
-  local start_snapshot = base_snapshot or self.stats
+  local start_snapshot = shallow_copy(base_snapshot or self.stats)
   local snapshot = shallow_copy(start_snapshot)
   local hazard = opts.hazard or self:get_next_hazard()
   local hazard_strength = opts.hazard_strength or self.hazard_strength
+  local magnetosphere_level = opts.magnetosphere_level or self.magnetosphere_level
+  local hazard_projection = self:project_hazard(hazard, hazard_strength, magnetosphere_level)
+  local active_hazard = hazard_projection.hazard
   local source_economy = opts.economy_state or self:get_economy_snapshot()
   local economy = {
     population = math.max(0, source_economy.population or 0),
@@ -602,7 +862,28 @@ function TerraformingState:forecast_end_turn(base_snapshot, opts)
   }
 
   local summary = {
-    hazard = hazard.name,
+    hazard = active_hazard.name,
+    hazard_id = active_hazard.id,
+    hazard_category = active_hazard.category,
+    hazard_origin = active_hazard.origin,
+    hazard_blockable = active_hazard.magnetosphere_blockable and true or false,
+    hazard_strength = hazard_strength,
+    magnetosphere_level = clamp(
+      math.floor(magnetosphere_level or DEFAULT_MAGNETOSPHERE_LEVEL),
+      MIN_MAGNETOSPHERE_LEVEL,
+      MAX_MAGNETOSPHERE_LEVEL
+    ),
+    hazard_block_amount = hazard_projection.block_amount or 0,
+    hazard_raw_deltas = shallow_copy(hazard_projection.raw_deltas),
+    hazard_effective_deltas = shallow_copy(hazard_projection.effective_deltas),
+    hazard_blocked_deltas = shallow_copy(hazard_projection.blocked_deltas),
+    hazard_fully_blocked = hazard_projection.fully_blocked and true or false,
+    start_stats = shallow_copy(start_snapshot),
+    post_hazard_stats = shallow_copy(start_snapshot),
+    coupling_input_stats = shallow_copy(start_snapshot),
+    coupling_edge_deltas = {},
+    coupling_target_deltas_raw = {},
+    coupling_target_deltas_applied = {},
     hazard_deltas = {},
     coupling_deltas = {},
     in_band = 0,
@@ -625,11 +906,20 @@ function TerraformingState:forecast_end_turn(base_snapshot, opts)
     open_industry_slots = 0
   }
 
-  local scaled = make_scaled_deltas(hazard.deltas, hazard_strength)
-  self:apply_stat_changes_to(scaled, snapshot, summary.hazard_deltas)
+  self:apply_stat_changes_to(hazard_projection.effective_deltas, snapshot, summary.hazard_deltas)
+  summary.post_hazard_stats = shallow_copy(snapshot)
+  summary.coupling_input_stats = shallow_copy(snapshot)
 
-  local coupling_changes = self:build_coupling_changes(shallow_copy(snapshot))
+  local coupling_changes_raw, coupling_edge_deltas = self:compute_coupling(summary.coupling_input_stats)
+  summary.coupling_edge_deltas = shallow_copy(coupling_edge_deltas)
+  summary.coupling_target_deltas_raw = shallow_copy(coupling_changes_raw)
+
+  local coupling_changes = shallow_copy(coupling_changes_raw)
+  if self.cap_coupling_at_target then
+    coupling_changes = self:cap_coupling_changes_to_targets(summary.coupling_input_stats, coupling_changes)
+  end
   self:apply_stat_changes_to(coupling_changes, snapshot, summary.coupling_deltas)
+  summary.coupling_target_deltas_applied = shallow_copy(summary.coupling_deltas)
 
   local in_band, perfect, strained, critical = self:count_in_band_for(snapshot)
   summary.in_band = in_band
