@@ -14,6 +14,7 @@ local InfluenceUIStateSpec = require("tests.influence_ui_state_spec")
 local InfluenceLayoutSpec = require("tests.influence_layout_spec")
 local GameplayLayoutSpec = require("tests.gameplay_layout_spec")
 local CardLibraryLayoutSpec = require("tests.card_library_layout_spec")
+local CardLibraryStateSpec = require("tests.card_library_state_spec")
 
 local function run_section(name, fn)
   print("")
@@ -53,6 +54,10 @@ failed_total = failed_total + f6
 local p7, f7 = run_section("Card Library Layout Spec", CardLibraryLayoutSpec.run)
 passed_total = passed_total + p7
 failed_total = failed_total + f7
+
+local p8, f8 = run_section("Card Library State Spec", CardLibraryStateSpec.run)
+passed_total = passed_total + p8
+failed_total = failed_total + f8
 
 print("")
 print(string.format("math spec suite: %d scenario(s) passed, %d failed", passed_total, failed_total))
