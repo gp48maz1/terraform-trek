@@ -13,23 +13,23 @@ function CardLibraryScene:exit()
 end
 
 function CardLibraryScene:update(dt)
-  self.runtime.update(dt)
+  self.runtime.update_card_library(dt)
 end
 
 function CardLibraryScene:draw()
-  self.runtime.draw()
+  self.runtime.draw_card_library()
 end
 
 function CardLibraryScene:keypressed(key)
-  self.runtime.keypressed(key)
+  self.runtime.keypressed_card_library(key)
 end
 
 function CardLibraryScene:mousepressed(x, y, button)
-  self.runtime.mousepressed(x, y, button)
+  self.runtime.mousepressed_card_library(x, y, button)
 end
 
 function CardLibraryScene:wheelmoved(dx, dy)
-  self.runtime.wheelmoved(dx, dy)
+  self.runtime.wheelmoved_card_library(dx, dy)
 end
 
 function CardLibraryScene:resize(w, h)

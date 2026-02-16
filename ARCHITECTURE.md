@@ -44,3 +44,5 @@ Every scene should expose:
 
 Gameplay behavior currently runs through `app/legacy_runtime.lua` to preserve stability while modules are extracted.
 New features should target `content/*` and `systems/*` first; legacy runtime calls should shrink over time.
+Scene modules now call explicit scene-specific runtime methods (`*_gameplay`, `*_influence`, `*_card_library`) instead of a single generic event path.
+Shared data/constants for terraforming state are now split into `domain/terraforming_defaults.lua` and `domain/terraforming_math.lua`.

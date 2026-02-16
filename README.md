@@ -93,6 +93,9 @@ A separate launch mode is available for browsing all cards and filtering by topi
 - `main.lua` is now callback orchestration only.
 - Runtime behavior is currently hosted in `app/legacy_runtime.lua` for behavior-preserving extraction.
 - New module roots are in place: `app/`, `scenes/`, `systems/`, `content/`, `domain/`, `run/`, `ui/layout/`, `ui/components/`.
+- Scene callbacks are now routed through explicit scene-specific runtime entrypoints rather than one generic update/draw/input path.
+- HUD/objective rendering has been pulled into reusable components under `ui/components/`.
+- Terraforming state defaults/math helpers are split into `domain/terraforming_defaults.lua` and `domain/terraforming_math.lua`.
 - Architecture details: `/Users/garypeters/Documents/GitHub/terraform-trek/ARCHITECTURE.md`.
 - Deterministic characterization harness: `lua tests/run_characterization.lua`.
 - Math test suite: `lua tests/run_math_suite.lua`.
