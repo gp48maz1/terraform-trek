@@ -232,7 +232,7 @@ function RuntimeInfluence:draw_magnetosphere_field(layout)
     local radius = base_r + 46 + i * 16
     local warm_alpha = 0.03 + (1.0 - strength) * 0.05
     love.graphics.setColor(0.96, 0.55, 0.25, warm_alpha)
-    love.graphics.arc("line", "open", math.pi * 0.73, math.pi * 1.27, radius)
+    love.graphics.arc("line", "open", 0, 0, radius, math.pi * 0.73, math.pi * 1.27)
   end
 
   love.graphics.pop()
