@@ -131,7 +131,9 @@ local function draw_wrapped_line(text, x, y, width, color, line_height)
   love.graphics.printf(text, x, y, width, "left")
   local font = love.graphics.getFont()
   local _, wrapped = font:getWrap(text, width)
-  return y + (math.max(1, #wrapped) * (line_height or 16))
+  local font_h = font:getHeight()
+  local effective_line_height = math.max(line_height or font_h, font_h + 2)
+  return y + (math.max(1, #wrapped) * effective_line_height)
 end
 
 local function fit_single_line(text, max_width)

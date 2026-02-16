@@ -1,23 +1,60 @@
 local InfluenceLayout = {}
 
+local function clamp_value(value, min_value, max_value)
+  if value < min_value then
+    return min_value
+  end
+  if value > max_value then
+    return max_value
+  end
+  return value
+end
+
 function InfluenceLayout.compute(safe_rect)
   local safe = safe_rect
   local panel_gap = 14
   local top_y = safe.y + 76
-  local top_h = math.floor(safe.h * 0.62)
-  local map_w = math.floor(safe.w * 0.54)
-  local map_rect = {
+  local cards_h = clamp_value(math.floor(safe.h * 0.24), 170, 196)
+  local cards_y = safe.y + safe.h - cards_h
+  local top_h = cards_y - top_y - 12
+
+  local hazard_w = math.max(220, math.floor(safe.w * 0.18))
+  local objectives_w = math.max(430, math.floor(safe.w * 0.285))
+  local map_w = safe.w - hazard_w - objectives_w - (panel_gap * 2)
+  if map_w < 520 then
+    local deficit = 520 - map_w
+    objectives_w = math.max(360, objectives_w - deficit)
+    map_w = safe.w - hazard_w - objectives_w - (panel_gap * 2)
+  end
+
+  local hazard_rect = {
     x = safe.x,
+    y = top_y,
+    w = hazard_w,
+    h = top_h
+  }
+
+  local map_rect = {
+    x = hazard_rect.x + hazard_rect.w + panel_gap,
     y = top_y,
     w = map_w,
     h = top_h
   }
 
-  local map_center_x = map_rect.x + math.floor(map_rect.w * 0.5)
-  local map_center_y = map_rect.y + math.floor(map_rect.h * 0.6)
-  local offset_x = math.floor(map_rect.w * 0.29)
-  local offset_y = math.floor(map_rect.h * 0.24)
-  local node_radius = math.max(48, math.floor(math.min(map_rect.w, map_rect.h) * 0.11))
+  local map_header_h = 120
+  local map_footer_h = 44
+  local map_graph_rect = {
+    x = map_rect.x + 14,
+    y = map_rect.y + map_header_h,
+    w = map_rect.w - 28,
+    h = map_rect.h - map_header_h - map_footer_h
+  }
+
+  local map_center_x = map_graph_rect.x + math.floor(map_graph_rect.w * 0.5)
+  local map_center_y = map_graph_rect.y + math.floor(map_graph_rect.h * 0.52)
+  local offset_x = math.floor(map_graph_rect.w * 0.29)
+  local offset_y = math.floor(map_graph_rect.h * 0.24)
+  local node_radius = math.max(42, math.floor(math.min(map_graph_rect.w, map_graph_rect.h) * 0.11))
   local nodes = {
     heat = { x = map_center_x, y = map_center_y - offset_y, r = node_radius },
     water = { x = map_center_x + offset_x, y = map_center_y, r = node_radius },
@@ -35,30 +72,49 @@ function InfluenceLayout.compute(safe_rect)
   }
 
   local graph_explain_rect = {
-    x = map_rect.x + 22,
-    y = map_rect.y + 92,
-    w = map_rect.w - 44,
-    h = map_rect.h - 120
+    x = map_graph_rect.x + 8,
+    y = map_graph_rect.y + 8,
+    w = map_graph_rect.w - 16,
+    h = map_graph_rect.h - 16
   }
 
   local turn_explain_rect = {
     x = safe.x + 12,
-    y = map_rect.y + 92,
+    y = map_rect.y + 98,
     w = safe.w - 24,
-    h = map_rect.h - 82
+    h = map_rect.h - 90
   }
 
-  local cards_y = map_rect.y + map_rect.h + 12
   local cards_rect = {
     x = safe.x,
     y = cards_y,
     w = safe.w,
-    h = (safe.y + safe.h) - cards_y
+    h = cards_h
+  }
+
+  local magnetosphere_base_r = math.floor(math.sqrt(offset_x * offset_x + offset_y * offset_y) + node_radius + 22)
+  local magnetosphere = {
+    x = map_center_x,
+    y = map_center_y,
+    base_r = magnetosphere_base_r
+  }
+
+  local hazard_card_w = math.min(hazard_rect.w - 20, 236)
+  local hazard_card_h = math.min(hazard_rect.h - 42, 276)
+  local hazard_card_rect = {
+    x = hazard_rect.x + math.floor((hazard_rect.w - hazard_card_w) * 0.5),
+    y = hazard_rect.y + 30,
+    w = hazard_card_w,
+    h = hazard_card_h
   }
 
   return {
+    hazard_rect = hazard_rect,
+    hazard_card_rect = hazard_card_rect,
     map_rect = map_rect,
+    map_graph_rect = map_graph_rect,
     nodes = nodes,
+    magnetosphere = magnetosphere,
     objectives_rect = objectives_rect,
     graph_explain_rect = graph_explain_rect,
     turn_explain_rect = turn_explain_rect,
@@ -125,10 +181,10 @@ function InfluenceLayout.get_card_rects(layout, hand)
   end
 
   local rect = layout.cards_rect
-  local card_w = 170
-  local card_h = 58
+  local card_w = 166
+  local card_h = 56
   local gap_x = 12
-  local gap_y = 10
+  local gap_y = 8
   local footer_reserved = 42
   local cards_per_row = math.max(1, math.floor((rect.w - 20 + gap_x) / (card_w + gap_x)))
   local max_rows = math.max(1, math.floor((rect.h - 34 - footer_reserved + gap_y) / (card_h + gap_y)))

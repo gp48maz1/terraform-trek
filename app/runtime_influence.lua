@@ -4,6 +4,7 @@ local InfluenceLayout = require("ui.layout.influence_layout")
 
 local ObjectivesPanel = require("ui.components.objectives_panel")
 local InfluenceExplain = require("ui.components.influence_explain")
+local HazardCard = require("ui.components.hazard_card")
 
 local RuntimeInfluence = {}
 RuntimeInfluence.__index = RuntimeInfluence
@@ -151,13 +152,13 @@ function RuntimeInfluence:draw_diamond(x, y, size, fill_color, border_color)
   end
 end
 
-function RuntimeInfluence:draw_stat_track(map_rect, node, stat_key, current_value, preview_value, target_value)
+function RuntimeInfluence:draw_stat_track(map_graph_rect, node, stat_key, current_value, preview_value, target_value)
   local bounds = self.ctx.terraforming_state:get_stat_bounds(stat_key)
   local track_w = math.floor(node.r * 1.6)
   local track_h = 12
   local track_x = math.floor(node.x - (track_w * 0.5))
   local track_y = math.floor(node.y - node.r - 20)
-  local min_track_y = map_rect.y + 86
+  local min_track_y = map_graph_rect.y + 8
   if track_y < min_track_y then
     track_y = min_track_y
   end
@@ -200,8 +201,105 @@ function RuntimeInfluence:draw_stat_track(map_rect, node, stat_key, current_valu
   end
 end
 
+function RuntimeInfluence:draw_magnetosphere_field(layout)
+  local magnetosphere = layout.magnetosphere
+  if not magnetosphere then
+    return
+  end
+
+  local mag_level = self.ctx.terraforming_state:get_magnetosphere_level()
+  local strength = self.ctx:clamp_value((mag_level - 1) / 3, 0, 1)
+  local cx = magnetosphere.x
+  local cy = magnetosphere.y
+  local base_r = magnetosphere.base_r
+
+  love.graphics.push()
+  love.graphics.translate(cx, cy)
+
+  for i = 1, 5 do
+    local t = i / 5
+    local radius = base_r + (i - 1) * 18
+    local stretch = 1.0 + t * 0.55
+    local alpha = (0.05 + strength * 0.05) * (1.0 - t * 0.25)
+    love.graphics.push()
+    love.graphics.scale(stretch, 1)
+    love.graphics.setColor(0.38, 0.68, 1.0, alpha)
+    love.graphics.circle("line", 0, 0, radius)
+    love.graphics.pop()
+  end
+
+  for i = 1, 3 do
+    local radius = base_r + 46 + i * 16
+    local warm_alpha = 0.03 + (1.0 - strength) * 0.05
+    love.graphics.setColor(0.96, 0.55, 0.25, warm_alpha)
+    love.graphics.arc("line", "open", math.pi * 0.73, math.pi * 1.27, radius)
+  end
+
+  love.graphics.pop()
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+function RuntimeInfluence:draw_incoming_hazard_panel(layout)
+  local hazard_rect = layout.hazard_rect
+  local hazard_card_rect = layout.hazard_card_rect
+  if not hazard_rect or not hazard_card_rect then
+    return
+  end
+
+  local projection = self.ctx.terraforming_state:preview_next_hazard()
+  local hazard = projection.hazard or {}
+  local mag_level = self.ctx.terraforming_state:get_magnetosphere_level()
+  local mag_tier = self.ctx.terraforming_state:get_magnetosphere_tier(mag_level)
+  local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 3.1)
+
+  love.graphics.setColor(0.06, 0.08, 0.12, 0.9)
+  love.graphics.rectangle("fill", hazard_rect.x, hazard_rect.y, hazard_rect.w, hazard_rect.h, 10, 10)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  love.graphics.rectangle("line", hazard_rect.x, hazard_rect.y, hazard_rect.w, hazard_rect.h, 10, 10)
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("Incoming Hazard", hazard_rect.x + 10, hazard_rect.y + 10, hazard_rect.w - 20, "left")
+  love.graphics.setColor(0.75, 0.87, 0.95, 1)
+  love.graphics.printf(
+    "Magnetosphere L" .. tostring(mag_level) .. " (" .. mag_tier .. ")",
+    hazard_rect.x + 10,
+    hazard_rect.y + 30,
+    hazard_rect.w - 20,
+    "left"
+  )
+
+  HazardCard.draw({
+    rect = hazard_card_rect,
+    projection = projection,
+    target = {
+      x = layout.magnetosphere.x,
+      y = layout.magnetosphere.y,
+      radius = math.floor(layout.magnetosphere.base_r * 0.62)
+    },
+    pulse = pulse,
+    format_delta_list = function(deltas)
+      return self.ctx:format_delta_list(deltas)
+    end,
+    magnetosphere_level = mag_level,
+    magnetosphere_tier = mag_tier
+  })
+
+  local footer_y = hazard_rect.y + hazard_rect.h - 44
+  local footer_text
+  if hazard.magnetosphere_blockable then
+    footer_text = "After block: " .. self.ctx:format_delta_list(projection.effective_deltas)
+    love.graphics.setColor(0.7, 0.9, 1.0, 1)
+  else
+    footer_text = "Bypasses magnetosphere"
+    love.graphics.setColor(0.93, 0.8, 0.42, 1)
+  end
+  love.graphics.printf(footer_text, hazard_rect.x + 10, footer_y, hazard_rect.w - 20, "left")
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
 function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
   local map_rect = layout.map_rect
+  local graph_rect = layout.map_graph_rect
   local snapshot = forecast_ctx.active_snapshot
   local toggle_buttons = self:get_map_toggle_buttons(layout)
   local projection_label = "Viewing Current State"
@@ -215,10 +313,14 @@ function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
   love.graphics.rectangle("line", map_rect.x, map_rect.y, map_rect.w, map_rect.h, 10, 10)
 
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Core Influence Graph", map_rect.x + 12, map_rect.y + 10, map_rect.w - 24, "left")
-  love.graphics.printf("Use Explain Graph for detailed coupling rules and focused primitive breakdown.", map_rect.x + 12, map_rect.y + 30, map_rect.w - 24, "left")
+  local font_h = love.graphics.getFont():getHeight()
+  local title_y = map_rect.y + 10
+  local subtitle_y = title_y + font_h + 2
+  local projection_y = subtitle_y + font_h + 2
+  love.graphics.printf("Core Influence Graph", map_rect.x + 12, title_y, map_rect.w - 24, "left")
+  love.graphics.printf("Use Explain Graph for detailed coupling rules and focused primitive breakdown.", map_rect.x + 12, subtitle_y, map_rect.w - 24, "left")
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf(projection_label, map_rect.x + 12, map_rect.y + 48, map_rect.w - 24, "left")
+  love.graphics.printf(projection_label, map_rect.x + 12, projection_y, map_rect.w - 24, "left")
 
   local filter_fill = self.ctx.influence_ui.hovered_edge_filter_button and { 0.2, 0.3, 0.4, 0.95 } or { 0.14, 0.19, 0.27, 0.95 }
   love.graphics.setColor(unpack(filter_fill))
@@ -240,26 +342,30 @@ function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf(self.ctx.influence_ui.show_graph_explain and "Hide Graph" or "Explain Graph", toggle_buttons.explain_graph.x + 4, toggle_buttons.explain_graph.y + 6, toggle_buttons.explain_graph.w - 8, "center")
 
-  love.graphics.setColor(0.45, 0.95, 0.45, 1)
-  love.graphics.circle("fill", map_rect.x + 18, map_rect.y + 58, 7)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("+ target impact", map_rect.x + 30, map_rect.y + 51)
-  love.graphics.setColor(0.98, 0.45, 0.45, 1)
-  love.graphics.circle("fill", map_rect.x + 156, map_rect.y + 58, 7)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("- target impact", map_rect.x + 168, map_rect.y + 51)
-  love.graphics.setColor(0.62, 0.66, 0.74, 1)
-  love.graphics.circle("fill", map_rect.x + 292, map_rect.y + 58, 7)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("0 neutral", map_rect.x + 304, map_rect.y + 51)
+  local legend_row1_y = projection_y + font_h + 6
+  local legend_row2_y = legend_row1_y + font_h + 4
 
-  local marker_legend_y = map_rect.y + 68
-  self:draw_diamond(map_rect.x + 18, marker_legend_y + 1, 5, { 1, 1, 1, 1 }, { 0.05, 0.08, 0.12, 1 })
+  love.graphics.setColor(0.45, 0.95, 0.45, 1)
+  love.graphics.circle("fill", map_rect.x + 18, legend_row1_y + 7)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("current", map_rect.x + 30, marker_legend_y - 6)
-  self:draw_diamond(map_rect.x + 124, marker_legend_y + 1, 5, { 0.45, 0.78, 1.0, 1 }, { 0.05, 0.08, 0.12, 1 })
+  love.graphics.print("+ target impact", map_rect.x + 30, legend_row1_y)
+  love.graphics.setColor(0.98, 0.45, 0.45, 1)
+  love.graphics.circle("fill", map_rect.x + 166, legend_row1_y + 7)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("preview (card push)", map_rect.x + 136, marker_legend_y - 6)
+  love.graphics.print("- target impact", map_rect.x + 178, legend_row1_y)
+  love.graphics.setColor(0.62, 0.66, 0.74, 1)
+  love.graphics.circle("fill", map_rect.x + 314, legend_row1_y + 7)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("0 neutral", map_rect.x + 326, legend_row1_y)
+
+  self:draw_diamond(map_rect.x + 18, legend_row2_y + 8, 5, { 1, 1, 1, 1 }, { 0.05, 0.08, 0.12, 1 })
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("current", map_rect.x + 30, legend_row2_y + 1)
+  self:draw_diamond(map_rect.x + 124, legend_row2_y + 8, 5, { 0.45, 0.78, 1.0, 1 }, { 0.05, 0.08, 0.12, 1 })
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("preview (card push)", map_rect.x + 136, legend_row2_y + 1)
+
+  self:draw_magnetosphere_field(layout)
 
   for _, edge in ipairs(self.ctx.INFLUENCE_EDGES) do
     if self:edge_is_visible(edge) then
@@ -283,7 +389,7 @@ function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
     local is_focused = key == self.ctx.influence_ui.focused_stat
     local is_hovered = key == self.ctx.influence_ui.hovered_influence_stat
 
-    self:draw_stat_track(map_rect, node, key, current_value, preview_value, self.ctx.terraforming_state.targets[key])
+    self:draw_stat_track(graph_rect, node, key, current_value, preview_value, self.ctx.terraforming_state.targets[key])
 
     love.graphics.setColor(0.08, 0.1, 0.14, 0.95)
     love.graphics.circle("fill", node.x, node.y, node.r)
@@ -476,6 +582,7 @@ function RuntimeInfluence:draw_influence_screen()
   love.graphics.print("Use Explain Graph, Explain Next Turn, and Explain Objectives for detailed breakdowns.", heading_x, heading_y + 40)
   love.graphics.print("M mapping, C clear card, I flow, Z current, X do nothing, P selected card, V gameplay.", heading_x, heading_y + 60)
 
+  self:draw_incoming_hazard_panel(layout)
   self:draw_influence_nodes(layout, forecast_ctx)
   self:draw_end_objectives_panel(layout, forecast_ctx)
   if self.ctx.influence_ui.show_graph_explain then
