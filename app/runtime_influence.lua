@@ -346,15 +346,15 @@ function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
   local legend_row2_y = legend_row1_y + font_h + 4
 
   love.graphics.setColor(0.45, 0.95, 0.45, 1)
-  love.graphics.circle("fill", map_rect.x + 18, legend_row1_y + 7)
+  love.graphics.circle("fill", map_rect.x + 18, legend_row1_y + 7, 7)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print("+ target impact", map_rect.x + 30, legend_row1_y)
   love.graphics.setColor(0.98, 0.45, 0.45, 1)
-  love.graphics.circle("fill", map_rect.x + 166, legend_row1_y + 7)
+  love.graphics.circle("fill", map_rect.x + 166, legend_row1_y + 7, 7)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print("- target impact", map_rect.x + 178, legend_row1_y)
   love.graphics.setColor(0.62, 0.66, 0.74, 1)
-  love.graphics.circle("fill", map_rect.x + 314, legend_row1_y + 7)
+  love.graphics.circle("fill", map_rect.x + 314, legend_row1_y + 7, 7)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print("0 neutral", map_rect.x + 326, legend_row1_y)
 
