@@ -9,6 +9,20 @@ local HazardCard = require("ui.components.hazard_card")
 local RuntimeInfluence = {}
 RuntimeInfluence.__index = RuntimeInfluence
 
+local function draw_arc_polyline(cx, cy, rx, ry, start_angle, end_angle, segments)
+  segments = math.max(8, segments or 18)
+  local points = {}
+  for i = 0, segments do
+    local t = i / segments
+    local angle = start_angle + (end_angle - start_angle) * t
+    points[#points + 1] = cx + math.cos(angle) * rx
+    points[#points + 1] = cy + math.sin(angle) * ry
+  end
+  if #points >= 4 then
+    love.graphics.line(points)
+  end
+end
+
 function RuntimeInfluence.new(ctx)
   return setmetatable({ ctx = ctx }, RuntimeInfluence)
 end
@@ -203,7 +217,8 @@ end
 
 function RuntimeInfluence:draw_magnetosphere_field(layout)
   local magnetosphere = layout.magnetosphere
-  if not magnetosphere then
+  local graph_rect = layout.map_graph_rect
+  if not magnetosphere or not graph_rect then
     return
   end
 
@@ -213,29 +228,48 @@ function RuntimeInfluence:draw_magnetosphere_field(layout)
   local cy = magnetosphere.y
   local base_r = magnetosphere.base_r
 
-  love.graphics.push()
-  love.graphics.translate(cx, cy)
+  local line_width = love.graphics.getLineWidth()
+  local left_center_x = cx - base_r * 0.1
+  local right_center_x = cx + base_r * 0.14
+  local left_rx_base = base_r * 0.44
+  local left_ry_base = base_r * 0.82
+  local right_rx_base = base_r * 1.02
+  local right_ry_base = base_r * 0.76
+
+  love.graphics.setScissor(graph_rect.x + 2, graph_rect.y + 2, graph_rect.w - 4, graph_rect.h - 4)
 
   for i = 1, 5 do
-    local t = i / 5
-    local radius = base_r + (i - 1) * 18
-    local stretch = 1.0 + t * 0.55
-    local alpha = (0.05 + strength * 0.05) * (1.0 - t * 0.25)
-    love.graphics.push()
-    love.graphics.scale(stretch, 1)
-    love.graphics.setColor(0.38, 0.68, 1.0, alpha)
-    love.graphics.circle("line", 0, 0, radius)
-    love.graphics.pop()
+    local t = (i - 1) / 4
+    local alpha = (0.04 + strength * 0.06) * (1.0 - t * 0.2)
+    local rx = left_rx_base + i * 12
+    local ry = left_ry_base + i * 10
+    love.graphics.setColor(0.36, 0.67, 1.0, alpha)
+    love.graphics.setLineWidth(math.max(1, 1.6 - t * 0.4))
+    draw_arc_polyline(left_center_x, cy, rx, ry, math.rad(118), math.rad(242), 24)
   end
 
+  for i = 1, 5 do
+    local t = (i - 1) / 4
+    local alpha = (0.035 + strength * 0.05) * (1.0 - t * 0.18)
+    local rx = right_rx_base + i * (20 + strength * 7)
+    local ry = right_ry_base + i * 12
+    love.graphics.setColor(0.35, 0.62, 0.98, alpha)
+    love.graphics.setLineWidth(math.max(1, 1.6 - t * 0.4))
+    draw_arc_polyline(right_center_x, cy, rx, ry, math.rad(-62), math.rad(62), 28)
+  end
+
+  local warm_alpha = 0.02 + (1.0 - strength) * 0.055
   for i = 1, 3 do
-    local radius = base_r + 46 + i * 16
-    local warm_alpha = 0.03 + (1.0 - strength) * 0.05
-    love.graphics.setColor(0.96, 0.55, 0.25, warm_alpha)
-    love.graphics.arc("line", "open", 0, 0, radius, math.pi * 0.73, math.pi * 1.27)
+    local fade = 1 - (i - 1) * 0.22
+    local rx = left_rx_base + base_r * 0.25 + i * 16
+    local ry = left_ry_base + i * 14
+    love.graphics.setColor(0.96, 0.55, 0.25, warm_alpha * fade)
+    love.graphics.setLineWidth(1.2)
+    draw_arc_polyline(left_center_x - base_r * 0.04, cy, rx, ry, math.rad(126), math.rad(234), 22)
   end
 
-  love.graphics.pop()
+  love.graphics.setScissor()
+  love.graphics.setLineWidth(line_width)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -247,7 +281,6 @@ function RuntimeInfluence:draw_incoming_hazard_panel(layout)
   end
 
   local projection = self.ctx.terraforming_state:preview_next_hazard()
-  local hazard = projection.hazard or {}
   local mag_level = self.ctx.terraforming_state:get_magnetosphere_level()
   local mag_tier = self.ctx.terraforming_state:get_magnetosphere_tier(mag_level)
   local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 3.1)
@@ -259,14 +292,6 @@ function RuntimeInfluence:draw_incoming_hazard_panel(layout)
 
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf("Incoming Hazard", hazard_rect.x + 10, hazard_rect.y + 10, hazard_rect.w - 20, "left")
-  love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf(
-    "Magnetosphere L" .. tostring(mag_level) .. " (" .. mag_tier .. ")",
-    hazard_rect.x + 10,
-    hazard_rect.y + 30,
-    hazard_rect.w - 20,
-    "left"
-  )
 
   HazardCard.draw({
     rect = hazard_card_rect,
@@ -283,18 +308,6 @@ function RuntimeInfluence:draw_incoming_hazard_panel(layout)
     magnetosphere_level = mag_level,
     magnetosphere_tier = mag_tier
   })
-
-  local footer_y = hazard_rect.y + hazard_rect.h - 44
-  local footer_text
-  if hazard.magnetosphere_blockable then
-    footer_text = "After block: " .. self.ctx:format_delta_list(projection.effective_deltas)
-    love.graphics.setColor(0.7, 0.9, 1.0, 1)
-  else
-    footer_text = "Bypasses magnetosphere"
-    love.graphics.setColor(0.93, 0.8, 0.42, 1)
-  end
-  love.graphics.printf(footer_text, hazard_rect.x + 10, footer_y, hazard_rect.w - 20, "left")
-  love.graphics.setColor(1, 1, 1, 1)
 end
 
 function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)

@@ -54,7 +54,7 @@ function InfluenceLayout.compute(safe_rect)
   local map_center_y = map_graph_rect.y + math.floor(map_graph_rect.h * 0.52)
   local offset_x = math.floor(map_graph_rect.w * 0.29)
   local offset_y = math.floor(map_graph_rect.h * 0.24)
-  local node_radius = math.max(42, math.floor(math.min(map_graph_rect.w, map_graph_rect.h) * 0.11))
+  local node_radius = math.max(48, math.floor(math.min(map_graph_rect.w, map_graph_rect.h) * 0.125))
   local nodes = {
     heat = { x = map_center_x, y = map_center_y - offset_y, r = node_radius },
     water = { x = map_center_x + offset_x, y = map_center_y, r = node_radius },
@@ -92,7 +92,7 @@ function InfluenceLayout.compute(safe_rect)
     h = cards_h
   }
 
-  local magnetosphere_base_r = math.floor(math.sqrt(offset_x * offset_x + offset_y * offset_y) + node_radius + 22)
+  local magnetosphere_base_r = math.floor(math.max(offset_x + node_radius, offset_y + node_radius) + 10)
   local magnetosphere = {
     x = map_center_x,
     y = map_center_y,
@@ -100,10 +100,15 @@ function InfluenceLayout.compute(safe_rect)
   }
 
   local hazard_card_w = math.min(hazard_rect.w - 20, 236)
-  local hazard_card_h = math.min(hazard_rect.h - 42, 276)
+  local hazard_card_h = math.max(190, math.min(hazard_rect.h - 62, 266))
+  local hazard_card_y = hazard_rect.y + 42
+  local hazard_bottom = hazard_rect.y + hazard_rect.h - 10
+  if hazard_card_y + hazard_card_h > hazard_bottom then
+    hazard_card_h = math.max(160, hazard_bottom - hazard_card_y)
+  end
   local hazard_card_rect = {
     x = hazard_rect.x + math.floor((hazard_rect.w - hazard_card_w) * 0.5),
-    y = hazard_rect.y + 30,
+    y = hazard_card_y,
     w = hazard_card_w,
     h = hazard_card_h
   }

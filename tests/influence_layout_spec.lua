@@ -58,7 +58,13 @@ local function run_compute_contract()
   expect_equal(result, "graph rect height reserves footer", layout.map_graph_rect.h, layout.map_rect.h - 164)
 
   expect_equal(result, "hazard card width cap", layout.hazard_card_rect.w, math.min(layout.hazard_rect.w - 20, 236))
-  expect_equal(result, "hazard card height cap", layout.hazard_card_rect.h, math.min(layout.hazard_rect.h - 42, 276))
+  local expected_hazard_card_h = math.max(190, math.min(layout.hazard_rect.h - 62, 266))
+  local expected_hazard_card_y = layout.hazard_rect.y + 42
+  local expected_hazard_bottom = layout.hazard_rect.y + layout.hazard_rect.h - 10
+  if expected_hazard_card_y + expected_hazard_card_h > expected_hazard_bottom then
+    expected_hazard_card_h = math.max(160, expected_hazard_bottom - expected_hazard_card_y)
+  end
+  expect_equal(result, "hazard card height cap", layout.hazard_card_rect.h, expected_hazard_card_h)
 
   expect_equal(result, "heat and soil share x", layout.nodes.heat.x, layout.nodes.soil.x)
   expect_equal(result, "air and water share y", layout.nodes.air.y, layout.nodes.water.y)
