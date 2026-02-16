@@ -16,6 +16,7 @@ local InfluenceUIState = require("app.influence_ui_state")
 local InfluenceLayout = require("ui.layout.influence_layout")
 local GameplayLayout = require("ui.layout.gameplay_layout")
 local CardLibraryLayout = require("ui.layout.card_library_layout")
+local CardLibraryState = require("app.card_library_state")
 
 local VIEWPORT_REF_W = 1728
 local VIEWPORT_REF_H = 798
@@ -194,17 +195,7 @@ end
 local launch_mode = detect_launch_mode() -- game | cards
 
 local initialize_card_library_state
-
-local card_library_state = {
-  cards = {},
-  topics = { "All" },
-  selected_topic = "All",
-  selected_card_id = nil,
-  hovered_topic = nil,
-  hovered_card_id = nil,
-  scroll_offset = 0,
-  max_scroll = 0
-}
+local card_library_state = CardLibraryState.new()
 
 local function copy_stats(source)
   local out = {}
@@ -1506,138 +1497,20 @@ local function calculate_profit_flow_totals(active_industries, profit_breakdown,
   }
 end
 
-local CARD_LIBRARY_TOPIC_ORDER = {
-  "Terraform",
-  "Industry",
-  "Chance",
-  "Power",
-  "Heat",
-  "Air",
-  "Water",
-  "Soil",
-  "Economy",
-  "Draw",
-  "Stabilize",
-  "Stat Change"
-}
-
-local CATEGORY_SORT_ORDER = {
-  Terraform = 1,
-  Industry = 2,
-  Chance = 3,
-  Power = 4
-}
-
-local function get_card_library_topics_for_card(card_data)
-  local topics = {}
-  local function add(topic)
-    if topic and topic ~= "" then
-      topics[topic] = true
-    end
-  end
-
-  add(card_data.category)
-  local properties = card_data.properties or {}
-  local changes = properties.stat_changes
-  if changes then
-    add("Stat Change")
-    for stat_key, _ in pairs(changes) do
-      add(STAT_LABELS[stat_key] or stat_key)
-    end
-  end
-
-  if card_data.effect_fn_name == "install_industry" then
-    add("Economy")
-    add("Industry")
-  elseif card_data.effect_fn_name == "draw_cards" then
-    add("Draw")
-  elseif card_data.effect_fn_name == "stabilize_system" then
-    add("Stabilize")
-  end
-
-  return topics
-end
-
 initialize_card_library_state = function()
-  local card_ids = CardTypes.getAllCardIds()
-  table.sort(card_ids)
-
-  local entries = {}
-  local topic_presence = {}
-  for _, card_id in ipairs(card_ids) do
-    local card_data = CardTypes.createCardData(card_id)
-    local topics = get_card_library_topics_for_card(card_data)
-    for topic, _ in pairs(topics) do
-      topic_presence[topic] = true
-    end
-    table.insert(entries, {
-      id = card_id,
-      data = card_data,
-      card = Card:new(card_data),
-      topics = topics
-    })
-  end
-
-  table.sort(entries, function(a, b)
-    local ca = CATEGORY_SORT_ORDER[a.data.category] or 99
-    local cb = CATEGORY_SORT_ORDER[b.data.category] or 99
-    if ca == cb then
-      return string.lower(a.data.name) < string.lower(b.data.name)
-    end
-    return ca < cb
-  end)
-
-  local topics = { "All" }
-  for _, topic in ipairs(CARD_LIBRARY_TOPIC_ORDER) do
-    if topic_presence[topic] then
-      table.insert(topics, topic)
-      topic_presence[topic] = nil
-    end
-  end
-
-  local extra_topics = {}
-  for topic, _ in pairs(topic_presence) do
-    table.insert(extra_topics, topic)
-  end
-  table.sort(extra_topics)
-  for _, topic in ipairs(extra_topics) do
-    table.insert(topics, topic)
-  end
-
-  card_library_state.cards = entries
-  card_library_state.topics = topics
-  card_library_state.selected_topic = "All"
-  card_library_state.selected_card_id = entries[1] and entries[1].id or nil
-  card_library_state.hovered_topic = nil
-  card_library_state.hovered_card_id = nil
-  card_library_state.scroll_offset = 0
-  card_library_state.max_scroll = 0
+  CardLibraryState.initialize(card_library_state, {
+    card_types = CardTypes,
+    card_class = Card,
+    stat_labels = STAT_LABELS
+  })
 end
 
 local function get_card_library_filtered_entries()
-  local filtered = {}
-  local selected_topic = card_library_state.selected_topic
-  for _, entry in ipairs(card_library_state.cards) do
-    if selected_topic == "All" or entry.topics[selected_topic] then
-      table.insert(filtered, entry)
-    end
-  end
-  return filtered
+  return CardLibraryState.get_filtered_entries(card_library_state)
 end
 
 local function ensure_card_library_selection(filtered)
-  if #filtered == 0 then
-    card_library_state.selected_card_id = nil
-    return
-  end
-
-  local selected_id = card_library_state.selected_card_id
-  for _, entry in ipairs(filtered) do
-    if entry.id == selected_id then
-      return
-    end
-  end
-  card_library_state.selected_card_id = filtered[1].id
+  CardLibraryState.ensure_selection(card_library_state, filtered)
 end
 
 local function get_card_library_layout()
@@ -1653,12 +1526,7 @@ local function get_card_library_card_rects(layout, filtered_entries)
 end
 
 local function get_card_library_selected_entry(filtered_entries)
-  for _, entry in ipairs(filtered_entries) do
-    if entry.id == card_library_state.selected_card_id then
-      return entry
-    end
-  end
-  return filtered_entries[1]
+  return CardLibraryState.get_selected_entry(card_library_state, filtered_entries)
 end
 
 local function update_card_library_hover_state()
@@ -1667,11 +1535,8 @@ local function update_card_library_hover_state()
   local filtered_entries = get_card_library_filtered_entries()
   ensure_card_library_selection(filtered_entries)
   local card_rects, max_scroll = get_card_library_card_rects(layout, filtered_entries)
-  card_library_state.max_scroll = max_scroll
-  card_library_state.scroll_offset = clamp_value(card_library_state.scroll_offset, 0, max_scroll)
-
-  card_library_state.hovered_topic = nil
-  card_library_state.hovered_card_id = nil
+  CardLibraryState.set_max_scroll(card_library_state, max_scroll)
+  CardLibraryState.reset_hover(card_library_state)
 
   for _, filter_rect in ipairs(layout.filter_rects) do
     if point_in_rect(mx, my, filter_rect.x, filter_rect.y, filter_rect.w, filter_rect.h) then
@@ -1695,8 +1560,7 @@ local function draw_card_library_screen()
   local filtered_entries = get_card_library_filtered_entries()
   ensure_card_library_selection(filtered_entries)
   local card_rects, max_scroll = get_card_library_card_rects(layout, filtered_entries)
-  card_library_state.max_scroll = max_scroll
-  card_library_state.scroll_offset = clamp_value(card_library_state.scroll_offset, 0, max_scroll)
+  CardLibraryState.set_max_scroll(card_library_state, max_scroll)
   local selected_entry = get_card_library_selected_entry(filtered_entries)
 
   Background.draw_fill()
@@ -1864,13 +1728,11 @@ local function handle_card_library_mousepressed(x, y)
   local filtered_entries = get_card_library_filtered_entries()
   ensure_card_library_selection(filtered_entries)
   local card_rects, max_scroll = get_card_library_card_rects(layout, filtered_entries)
-  card_library_state.max_scroll = max_scroll
-  card_library_state.scroll_offset = clamp_value(card_library_state.scroll_offset, 0, max_scroll)
+  CardLibraryState.set_max_scroll(card_library_state, max_scroll)
 
   for _, filter_rect in ipairs(layout.filter_rects) do
     if point_in_rect(x, y, filter_rect.x, filter_rect.y, filter_rect.w, filter_rect.h) then
-      card_library_state.selected_topic = filter_rect.topic
-      card_library_state.scroll_offset = 0
+      CardLibraryState.select_topic(card_library_state, filter_rect.topic)
       local refreshed = get_card_library_filtered_entries()
       ensure_card_library_selection(refreshed)
       return
@@ -1881,19 +1743,14 @@ local function handle_card_library_mousepressed(x, y)
   for _, rect in ipairs(card_rects) do
     local visible = rect.y + rect.h >= grid_rect.y and rect.y <= grid_rect.y + grid_rect.h
     if visible and point_in_rect(x, y, rect.x, rect.y, rect.w, rect.h) then
-      card_library_state.selected_card_id = rect.entry.id
+      CardLibraryState.select_card(card_library_state, rect.entry.id)
       return
     end
   end
 end
 
 local function handle_card_library_wheel(y)
-  local step = 44
-  card_library_state.scroll_offset = clamp_value(
-    card_library_state.scroll_offset - y * step,
-    0,
-    card_library_state.max_scroll
-  )
+  CardLibraryState.scroll_by(card_library_state, y, 44)
 end
 
 local function handle_card_library_keypressed(key)
@@ -1910,32 +1767,13 @@ local function handle_card_library_keypressed(key)
     return
   end
 
-  local topics = card_library_state.topics
-  local current_index = 1
-  for i, topic in ipairs(topics) do
-    if topic == card_library_state.selected_topic then
-      current_index = i
-      break
-    end
-  end
-
   if key == "left" then
-    current_index = current_index - 1
-    if current_index < 1 then
-      current_index = #topics
-    end
-    card_library_state.selected_topic = topics[current_index]
-    card_library_state.scroll_offset = 0
+    CardLibraryState.cycle_topic(card_library_state, -1)
     local filtered = get_card_library_filtered_entries()
     ensure_card_library_selection(filtered)
     return
   elseif key == "right" then
-    current_index = current_index + 1
-    if current_index > #topics then
-      current_index = 1
-    end
-    card_library_state.selected_topic = topics[current_index]
-    card_library_state.scroll_offset = 0
+    CardLibraryState.cycle_topic(card_library_state, 1)
     local filtered = get_card_library_filtered_entries()
     ensure_card_library_selection(filtered)
     return
