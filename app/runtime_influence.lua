@@ -43,6 +43,10 @@ function RuntimeInfluence:get_preview_explain_button(layout)
   return InfluenceLayout.get_preview_explain_button(layout)
 end
 
+function RuntimeInfluence:get_help_button(layout)
+  return InfluenceLayout.get_help_button(layout)
+end
+
 function RuntimeInfluence:get_objectives_explain_button(layout)
   return InfluenceLayout.get_objectives_explain_button(layout)
 end
@@ -227,57 +231,30 @@ function RuntimeInfluence:draw_magnetosphere_field(layout)
   local cy = magnetosphere.y
   local left_bound = layout.nodes.air.x - layout.nodes.air.r
   local right_bound = layout.nodes.water.x + layout.nodes.water.r
-  local top_bound = layout.nodes.heat.y - layout.nodes.heat.r
-  local bottom_bound = layout.nodes.soil.y + layout.nodes.soil.r
-  local cluster_h = math.max(120, bottom_bound - top_bound)
-  local graph_right = graph_rect.x + graph_rect.w - 12
+  local vertical_span = math.max(120, (layout.nodes.soil.y - layout.nodes.heat.y) + (layout.nodes.heat.r * 2))
+  local graph_right = graph_rect.x + graph_rect.w - 10
 
   local line_width = love.graphics.getLineWidth()
 
   love.graphics.setScissor(graph_rect.x + 2, graph_rect.y + 2, graph_rect.w - 4, graph_rect.h - 4)
 
-  -- Dayside (left): compressed bow lines kept outside the air node.
-  for i = 1, 5 do
-    local t = (i - 1) / 4
-    local alpha = (0.022 + strength * 0.04) * (1.0 - t * 0.18)
-    local rx = 22 + i * 9
-    local ry = cluster_h * 0.52 + i * 10
-    local cx = left_bound - (44 + i * 7)
-    if cx + rx > left_bound - 8 then
-      cx = (left_bound - 8) - rx
-    end
+  -- 4-shell simplified magnetosphere: compressed left side, pitched right tail.
+  for i = 1, 4 do
+    local t = (i - 1) / 3
+    local alpha = (0.03 + strength * 0.05) * (1.0 - t * 0.2)
+    local left_rx = 24 + i * 8
+    local left_ry = vertical_span * 0.44 + i * 8
+    local left_cx = (left_bound - 12) - left_rx
+
+    local right_cx = right_bound + 6 + i * 3
+    local right_target_rx = 72 + i * 14 + strength * 10
+    local right_rx = math.max(22, math.min(right_target_rx, graph_right - right_cx))
+    local right_ry = vertical_span * 0.34 + i * 7
+
     love.graphics.setColor(0.36, 0.67, 1.0, alpha)
-    love.graphics.setLineWidth(math.max(1, 1.6 - t * 0.4))
-    draw_arc_polyline(cx, cy, rx, ry, math.rad(112), math.rad(248), 26)
-  end
-
-  -- Nightside (right): stretched tail lines, capped to graph bounds.
-  for i = 1, 5 do
-    local t = (i - 1) / 4
-    local alpha = (0.03 + strength * 0.045) * (1.0 - t * 0.16)
-    local tail_cx = right_bound + 8 + i * 2
-    local target_rx = 64 + i * 14 + strength * 14
-    local max_rx = math.max(20, graph_right - tail_cx)
-    local rx = math.min(target_rx, max_rx)
-    local ry = cluster_h * 0.44 + i * 8
-    love.graphics.setColor(0.35, 0.62, 0.98, alpha)
-    love.graphics.setLineWidth(math.max(1, 1.6 - t * 0.4))
-    draw_arc_polyline(tail_cx, cy, rx, ry, math.rad(-58), math.rad(58), 30)
-  end
-
-  -- Bow shock accent in front of the compressed side.
-  local warm_alpha = 0.02 + (1.0 - strength) * 0.055
-  for i = 1, 2 do
-    local fade = 1 - (i - 1) * 0.22
-    local rx = 44 + i * 14
-    local ry = cluster_h * 0.66 + i * 16
-    local shock_cx = left_bound - (78 + i * 14)
-    if shock_cx + rx > left_bound - 20 then
-      shock_cx = (left_bound - 20) - rx
-    end
-    love.graphics.setColor(0.96, 0.55, 0.25, warm_alpha * fade)
-    love.graphics.setLineWidth(1.2)
-    draw_arc_polyline(shock_cx, cy, rx, ry, math.rad(106), math.rad(254), 24)
+    love.graphics.setLineWidth(math.max(1, 1.7 - t * 0.45))
+    draw_arc_polyline(left_cx, cy, left_rx, left_ry, math.rad(112), math.rad(248), 24)
+    draw_arc_polyline(right_cx, cy, right_rx, right_ry, math.rad(-54), math.rad(54), 28)
   end
 
   love.graphics.setScissor()
@@ -528,6 +505,7 @@ end
 function RuntimeInfluence:draw_influence_cards(layout)
   local rect = layout.cards_rect
   local card_rects = self:get_influence_card_rects(layout)
+  local help_button = self:get_help_button(layout)
   local explain_button = self:get_preview_explain_button(layout)
 
   love.graphics.setColor(0.06, 0.08, 0.12, 0.92)
@@ -537,6 +515,18 @@ function RuntimeInfluence:draw_influence_cards(layout)
 
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf("Preview Selector (Do Nothing or card). Use Current above to clear preview.", rect.x + 10, rect.y + 10, rect.w - 20, "left")
+
+  local help_fill = self.ctx.influence_ui.show_help_tooltip and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
+  if self.ctx.influence_ui.hovered_help_button and not self.ctx.influence_ui.show_help_tooltip then
+    help_fill = { 0.18, 0.24, 0.33, 1 }
+  end
+  local help_border = self.ctx.influence_ui.show_help_tooltip and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
+  love.graphics.setColor(unpack(help_fill))
+  love.graphics.rectangle("fill", help_button.x, help_button.y, help_button.w, help_button.h, 7, 7)
+  love.graphics.setColor(unpack(help_border))
+  love.graphics.rectangle("line", help_button.x, help_button.y, help_button.w, help_button.h, 7, 7)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("?", help_button.x, help_button.y + 4, help_button.w, "center")
 
   local turn_fill = self.ctx.influence_ui.show_turn_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
   if self.ctx.influence_ui.hovered_turn_explain_button and not self.ctx.influence_ui.show_turn_explain then
@@ -597,21 +587,69 @@ function RuntimeInfluence:draw_influence_cards(layout)
   end
 end
 
+function RuntimeInfluence:draw_screen_header(safe)
+  local title = "Core Influence Map (V)"
+  local font = love.graphics.getFont()
+  local box_w = font:getWidth(title) + 26
+  local box_h = font:getHeight() + 10
+  local box_x = safe.x + math.floor((safe.w - box_w) * 0.5)
+  local box_y = safe.y - 2
+
+  love.graphics.setColor(0.07, 0.1, 0.16, 0.95)
+  love.graphics.rectangle("fill", box_x, box_y, box_w, box_h, 8, 8)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  love.graphics.rectangle("line", box_x, box_y, box_w, box_h, 8, 8)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf(title, box_x, box_y + 5, box_w, "center")
+end
+
+function RuntimeInfluence:draw_help_tooltip(layout)
+  if not self.ctx.influence_ui.show_help_tooltip then
+    return
+  end
+
+  local safe = self.ctx:get_safe_rect()
+  local help_button = self:get_help_button(layout)
+  local panel_w = math.min(660, math.floor(safe.w * 0.56))
+  local panel_h = 112
+  local panel_x = layout.cards_rect.x + 12
+  local panel_y = help_button.y - panel_h - 8
+  if panel_y < safe.y + 34 then
+    panel_y = safe.y + 34
+  end
+
+  love.graphics.setColor(0.04, 0.06, 0.1, 0.98)
+  love.graphics.rectangle("fill", panel_x, panel_y, panel_w, panel_h, 10, 10)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  love.graphics.rectangle("line", panel_x, panel_y, panel_w, panel_h, 10, 10)
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("Influence Map Help", panel_x + 12, panel_y + 10, panel_w - 24, "left")
+  love.graphics.setColor(0.86, 0.92, 0.98, 1)
+  love.graphics.printf(
+    "Click primitive to focus. Arrows show coupling for the selected reference mode; blue marker shows card push.",
+    panel_x + 12,
+    panel_y + 30,
+    panel_w - 24,
+    "left"
+  )
+  love.graphics.printf(
+    "M mapping | C clear card | I flow | Z current | X do nothing | P selected card | V gameplay",
+    panel_x + 12,
+    panel_y + 66,
+    panel_w - 24,
+    "left"
+  )
+end
+
 function RuntimeInfluence:draw_influence_screen()
   local safe = self.ctx:get_safe_rect()
-  local heading_x = safe.x
-  local heading_y = safe.y - 8
   local layout = self:get_influence_layout()
   local forecast_ctx = self.ctx:get_forecast_context()
 
   Background.draw_fill()
   Background.draw_stars()
-
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("Core Influence Map (V)", heading_x, heading_y)
-  love.graphics.print("Click primitive to focus. Arrows show coupling for the selected reference mode; blue marker shows card push.", heading_x, heading_y + 20)
-  love.graphics.print("Use Explain Graph, Explain Next Turn, and Explain Objectives for detailed breakdowns.", heading_x, heading_y + 40)
-  love.graphics.print("M mapping, C clear card, I flow, Z current, X do nothing, P selected card, V gameplay.", heading_x, heading_y + 60)
+  self:draw_screen_header(safe)
 
   self:draw_incoming_hazard_panel(layout)
   self:draw_influence_nodes(layout, forecast_ctx)
@@ -623,6 +661,7 @@ function RuntimeInfluence:draw_influence_screen()
     self:draw_forecast_panel(layout.turn_explain_rect, forecast_ctx)
   end
   self:draw_influence_cards(layout)
+  self:draw_help_tooltip(layout)
 
   if self.ctx.campaign_state ~= "playing" then
     self:draw_status_overlay()
@@ -685,6 +724,8 @@ function RuntimeInfluence:update(_dt)
 
   local explain_button = self:get_preview_explain_button(layout)
   self.ctx.influence_ui.hovered_turn_explain_button = self.ctx:point_in_rect(mx, my, explain_button.x, explain_button.y, explain_button.w, explain_button.h)
+  local help_button = self:get_help_button(layout)
+  self.ctx.influence_ui.hovered_help_button = self.ctx:point_in_rect(mx, my, help_button.x, help_button.y, help_button.w, help_button.h)
 
   local objectives_explain_button = self:get_objectives_explain_button(layout)
   self.ctx.influence_ui.hovered_objectives_explain_button = self.ctx:point_in_rect(
@@ -827,6 +868,12 @@ function RuntimeInfluence:mousepressed(x, y, button)
   end
 
   local explain_button = self:get_preview_explain_button(layout)
+  local help_button = self:get_help_button(layout)
+  if self.ctx:point_in_rect(mapped_x, mapped_y, help_button.x, help_button.y, help_button.w, help_button.h) then
+    self.ctx.influence_ui:toggle_help_tooltip()
+    return
+  end
+
   if self.ctx:point_in_rect(mapped_x, mapped_y, explain_button.x, explain_button.y, explain_button.w, explain_button.h) then
     self.ctx.influence_ui:toggle_turn_explain()
     return

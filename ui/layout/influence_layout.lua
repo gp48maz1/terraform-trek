@@ -13,7 +13,7 @@ end
 function InfluenceLayout.compute(safe_rect)
   local safe = safe_rect
   local panel_gap = 14
-  local top_y = safe.y + 76
+  local top_y = safe.y + 50
   local cards_h = clamp_value(math.floor(safe.h * 0.24), 170, 196)
   local cards_y = safe.y + safe.h - cards_h
   local top_h = cards_y - top_y - 12
@@ -159,9 +159,19 @@ end
 function InfluenceLayout.get_preview_explain_button(layout)
   local rect = layout.cards_rect
   return {
-    x = rect.x + 12,
+    x = rect.x + 44,
     y = rect.y + rect.h - 30,
     w = 176,
+    h = 24
+  }
+end
+
+function InfluenceLayout.get_help_button(layout)
+  local rect = layout.cards_rect
+  return {
+    x = rect.x + 12,
+    y = rect.y + rect.h - 30,
+    w = 24,
     h = 24
   }
 end
