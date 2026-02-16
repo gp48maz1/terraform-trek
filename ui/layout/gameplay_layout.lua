@@ -63,17 +63,18 @@ function GameplayLayout.get_discard_rect(safe_rect, pile_ui)
   }
 end
 
-function GameplayLayout.get_end_turn_rect(safe_rect, hand_layout, hand_ui, end_turn_ui)
+function GameplayLayout.get_end_turn_rect(safe_rect, hand_layout, hand_ui, end_turn_ui, pile_ui)
   local safe = safe_rect
-  local hand = hand_ui or {}
   local end_turn = end_turn_ui or {}
-  local h = end_turn.height or 50
-  local w = end_turn.width or 170
-  local card_h = hand.card_height or 225
-  local y = hand_layout.base_y + math.floor((card_h - h) * 0.5)
+  local h = end_turn.height or 44
+  local w = end_turn.width or 142
+  local discard = GameplayLayout.get_discard_rect(safe, pile_ui)
+  local x = discard.x + math.floor((discard.w - w) * 0.5)
+  local y = discard.y - h - 14
+  x = clamp_value(x, safe.x + 14, safe.x + safe.w - w - 14)
   y = clamp_value(y, safe.y + 14, safe.y + safe.h - h - 14)
   return {
-    x = safe.x + safe.w - w - 16,
+    x = x,
     y = y,
     w = w,
     h = h
@@ -82,8 +83,8 @@ end
 
 function GameplayLayout.get_hazard_card_rect(safe_rect, planet)
   local safe = safe_rect
-  local card_w = 132
-  local card_h = 170
+  local card_w = 170
+  local card_h = 236
   local desired_x = planet.x - planet.radius - card_w - 24
   local min_x = safe.x + 16
   local max_x = safe.x + safe.w - card_w - 16
@@ -115,7 +116,7 @@ function GameplayLayout.compute(safe_rect, ui_state)
     hand = hand_layout,
     deck = GameplayLayout.get_deck_rect(safe, pile),
     discard = GameplayLayout.get_discard_rect(safe, pile),
-    end_turn = GameplayLayout.get_end_turn_rect(safe, hand_layout, hand, end_turn),
+    end_turn = GameplayLayout.get_end_turn_rect(safe, hand_layout, hand, end_turn, pile),
     incoming_hazard = GameplayLayout.get_hazard_card_rect(safe, planet)
   }
 end

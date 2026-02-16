@@ -1,30 +1,87 @@
 local GameplayHUD = {}
 
-local function draw_stats(opts)
-  local base_x = opts.start_x or 10
-  local base_y = opts.start_y or 110
-  local line_height = opts.show_real_world_values and 36 or 22
+local function fit_single_line(text, max_width)
+  local font = love.graphics.getFont()
+  if font:getWidth(text) <= max_width then
+    return text
+  end
 
-  for i, key in ipairs(opts.stat_order) do
-    local value = opts.terraforming_state.stats[key]
-    local target_value = opts.terraforming_state.targets[key]
-    local status, color = opts.get_stat_status(key, value)
-    local y = base_y + (i - 1) * line_height
+  local suffix = "..."
+  local suffix_w = font:getWidth(suffix)
+  local trimmed = text
+  while #trimmed > 0 and (font:getWidth(trimmed) + suffix_w) > max_width do
+    trimmed = string.sub(trimmed, 1, #trimmed - 1)
+  end
 
-    love.graphics.setColor(unpack(color))
-    love.graphics.print(
-      opts.stat_labels[key] .. ": " .. opts.format_signed(value) .. " / target " .. opts.format_signed(target_value) .. "  [" .. status .. "]",
-      base_x,
-      y
-    )
+  if #trimmed == 0 then
+    return suffix
+  end
+  return trimmed .. suffix
+end
 
-    if opts.show_real_world_values then
-      love.graphics.setColor(0.75, 0.84, 0.95, 1)
-      love.graphics.print("    " .. opts.get_real_world_mapping(key, value), base_x, y + 16)
+local function draw_industry_grid(opts)
+  local start_x = opts.start_x
+  local start_y = opts.start_y
+  local economy = opts.economy
+  local state = opts.terraforming_state
+  local cell_w = 158
+  local cell_h = 58
+  local col_gap = 8
+  local row_gap = 8
+  local header_h = 20
+  local slots = state:get_industry_slot_count()
+
+  love.graphics.setColor(0.75, 0.87, 0.95, 1)
+  love.graphics.print("Industry Slots", start_x, start_y)
+
+  for i = 1, slots do
+    local col = (i - 1) % 2
+    local row = math.floor((i - 1) / 2)
+    local x = start_x + (col * (cell_w + col_gap))
+    local y = start_y + header_h + (row * (cell_h + row_gap))
+    local industry = economy.industries[i]
+
+    local fill = { 0.08, 0.1, 0.14, 0.95 }
+    local border = { 0.48, 0.58, 0.7, 1 }
+    if industry then
+      local hp_ratio = (industry.health or 0) / math.max(1, industry.max_health or 1)
+      if hp_ratio <= 0.34 then
+        fill = { 0.24, 0.12, 0.12, 0.95 }
+        border = { 0.86, 0.45, 0.4, 1 }
+      elseif hp_ratio <= 0.67 then
+        fill = { 0.22, 0.18, 0.1, 0.95 }
+        border = { 0.93, 0.75, 0.42, 1 }
+      else
+        fill = { 0.12, 0.22, 0.15, 0.95 }
+        border = { 0.62, 0.9, 0.6, 1 }
+      end
+    end
+
+    love.graphics.setColor(unpack(fill))
+    love.graphics.rectangle("fill", x, y, cell_w, cell_h, 8, 8)
+    love.graphics.setColor(unpack(border))
+    love.graphics.rectangle("line", x, y, cell_w, cell_h, 8, 8)
+
+    if industry then
+      local base = industry.base_profit or 0
+      local pop_bonus = math.floor((economy.population or 0) * (industry.population_factor or 0) + 0.5)
+      local income = base + pop_bonus
+      local line_1 = fit_single_line(tostring(i) .. ". " .. tostring(industry.name or "Industry"), cell_w - 12)
+      local line_2 = "HP " .. tostring(industry.health or 0) .. "/" .. tostring(industry.max_health or 0)
+      local line_3 = "Income " .. opts.format_signed(income) .. "/t"
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.printf(line_1, x + 6, y + 7, cell_w - 12, "left")
+      love.graphics.printf(line_2, x + 6, y + 24, cell_w - 12, "left")
+      love.graphics.printf(line_3, x + 6, y + 40, cell_w - 12, "left")
+    else
+      love.graphics.setColor(0.75, 0.87, 0.95, 1)
+      love.graphics.printf(tostring(i) .. ". Open", x + 6, y + 11, cell_w - 12, "left")
+      love.graphics.printf("Income +0/t", x + 6, y + 33, cell_w - 12, "left")
     end
   end
 
   love.graphics.setColor(1, 1, 1, 1)
+  return start_y + header_h + (cell_h * 2) + row_gap
 end
 
 function GameplayHUD.draw_hud(opts)
@@ -66,56 +123,38 @@ function GameplayHUD.draw_hud(opts)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print("Population: " .. tostring(economy.population) .. "    Profit: " .. tostring(economy.profit), hud_x, header_y + 60)
 
-  local stats_start_y = header_y + 80
-  draw_stats({
-    start_y = stats_start_y,
+  local industry_y = header_y + 86
+  local industry_bottom_y = draw_industry_grid({
     start_x = hud_x,
-    show_real_world_values = opts.show_real_world_values,
-    stat_order = opts.stat_order,
-    stat_labels = opts.stat_labels,
+    start_y = industry_y,
+    economy = economy,
     terraforming_state = opts.terraforming_state,
-    get_stat_status = opts.get_stat_status,
-    format_signed = opts.format_signed,
-    get_real_world_mapping = opts.get_real_world_mapping
+    format_signed = opts.format_signed
   })
-  local line_height = opts.show_real_world_values and 36 or 22
-  local stats_bottom_y = stats_start_y + (#opts.stat_order * line_height)
-  local industry_y = stats_bottom_y + 12
-
-  local slot_parts = {}
-  for i = 1, opts.terraforming_state:get_industry_slot_count() do
-    local industry = economy.industries[i]
-    if industry then
-      table.insert(slot_parts, tostring(i) .. ":" .. industry.name .. " " .. tostring(industry.health) .. "/" .. tostring(industry.max_health))
-    else
-      table.insert(slot_parts, tostring(i) .. ":Open")
-    end
-  end
-  love.graphics.print("Industry Slots: " .. table.concat(slot_parts, " | "), hud_x, industry_y)
 
   if opts.turn_summary then
     local turn_summary = opts.turn_summary
-    local summary_y = industry_y + 38
+    local summary_y = industry_bottom_y + 16
     love.graphics.print(
       "Last Turn Hazard: " .. turn_summary.hazard .. " [" .. tostring(turn_summary.hazard_category or "Hazard") .. "]",
       hud_x,
       summary_y
     )
     love.graphics.print(
-      "Hazard Raw: " .. opts.format_delta_list(turn_summary.hazard_raw_deltas or turn_summary.hazard_deltas),
+      "Last Turn Raw (pre-magnetosphere): " .. opts.format_delta_list(turn_summary.hazard_raw_deltas or turn_summary.hazard_deltas),
       hud_x,
       summary_y + 20
     )
     if turn_summary.hazard_blockable then
       love.graphics.print(
-        "Magnetosphere Block: " .. opts.format_delta_list(turn_summary.hazard_blocked_deltas) ..
-          " -> Applied " .. opts.format_delta_list(turn_summary.hazard_deltas),
+        "Last Turn Applied (post-magnetosphere): " .. opts.format_delta_list(turn_summary.hazard_deltas) ..
+          "  [Blocked " .. opts.format_delta_list(turn_summary.hazard_blocked_deltas) .. "]",
         hud_x,
         summary_y + 40
       )
       summary_y = summary_y + 20
     else
-      love.graphics.print("Applied Hazard Delta: " .. opts.format_delta_list(turn_summary.hazard_deltas), hud_x, summary_y + 40)
+      love.graphics.print("Last Turn Applied (post-magnetosphere): " .. opts.format_delta_list(turn_summary.hazard_deltas), hud_x, summary_y + 40)
     end
     love.graphics.print("Coupling Delta: " .. opts.format_delta_list(turn_summary.coupling_deltas), hud_x, summary_y + 60)
     love.graphics.print(
@@ -140,7 +179,7 @@ function GameplayHUD.draw_controls_hint(opts)
   y = opts.clamp_value(y, safe.y + 12, safe.y + safe.h - 30)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.print(
-    "Controls: Click card | E end turn | V influence map | M real-world mapping | R restart",
+    "Controls: Click card | E end turn | V influence map | R restart",
     safe.x + 4,
     y
   )

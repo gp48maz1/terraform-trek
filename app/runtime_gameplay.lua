@@ -7,6 +7,7 @@ local DeckWidget = require("ui.components.deck_widget")
 local EnergyOrb = require("ui.components.energy_orb")
 local HazardCard = require("ui.components.hazard_card")
 local GameplayHUD = require("ui.components.gameplay_hud")
+local PrimitiveSnapshot = require("ui.components.primitive_snapshot")
 
 local RuntimeGameplay = {}
 RuntimeGameplay.__index = RuntimeGameplay
@@ -29,7 +30,7 @@ end
 
 function RuntimeGameplay:get_end_turn_rect()
   local hand_layout = self:get_hand_layout(#self.ctx.player_deck.hand)
-  return GameplayLayout.get_end_turn_rect(self.ctx:get_safe_rect(), hand_layout, self.ctx.HAND_UI, self.ctx.END_TURN_UI)
+  return GameplayLayout.get_end_turn_rect(self.ctx:get_safe_rect(), hand_layout, self.ctx.HAND_UI, self.ctx.END_TURN_UI, self.ctx.PILE_UI)
 end
 
 function RuntimeGameplay:get_hazard_card_rect()
@@ -38,6 +39,27 @@ function RuntimeGameplay:get_hazard_card_rect()
     y = self.ctx.target.y,
     radius = self.ctx.target.radius
   })
+end
+
+function RuntimeGameplay:get_primitive_snapshot_anchor()
+  local safe = self.ctx:get_safe_rect()
+  local planet = self.ctx.target
+  local discard_rect = self:get_discard_pile_rect()
+  local end_turn_rect = self:get_end_turn_rect()
+  local radius = 30
+  local half_w = 86 + radius + 10
+  local half_h = 74 + radius + 24
+  local desired_x = planet.x + planet.radius + 154
+  local max_x = safe.x + safe.w - half_w - 4
+  local min_x = safe.x + half_w + 10
+  local min_x_by_planet = planet.x + planet.radius + half_w + 20
+  local desired_y = planet.y + 6
+  local max_y = math.min(discard_rect.y, end_turn_rect.y) - half_h - 14
+  local min_y = safe.y + half_h + 12
+  return {
+    x = self.ctx:clamp_value(desired_x, math.max(min_x, min_x_by_planet), max_x),
+    y = self.ctx:clamp_value(desired_y, min_y, max_y)
+  }
 end
 
 function RuntimeGameplay:update_target_layout()
@@ -136,7 +158,7 @@ end
 function RuntimeGameplay:draw_energy_orb()
   local draw_rect = self:get_draw_pile_rect()
   local cx = draw_rect.x + math.floor(draw_rect.w * 0.5)
-  local cy = draw_rect.y - 26
+  local cy = draw_rect.y - 34
   EnergyOrb.draw(cx, cy, self.ctx.current_energy, self.ctx.max_energy)
 end
 
@@ -161,8 +183,10 @@ function RuntimeGameplay:draw_end_turn_button()
   love.graphics.setLineWidth(1)
 
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("END TURN", rect.x, rect.y + 12, rect.w, "center")
-  love.graphics.printf("(E)", rect.x, rect.y + 28, rect.w, "center")
+  local title_y = rect.y + math.floor(rect.h * 0.16)
+  local key_y = rect.y + math.floor(rect.h * 0.5)
+  love.graphics.printf("END TURN", rect.x, title_y, rect.w, "center")
+  love.graphics.printf("(E)", rect.x, key_y, rect.w, "center")
 end
 
 function RuntimeGameplay:draw_hud()
@@ -205,6 +229,24 @@ function RuntimeGameplay:draw_controls_hint()
     clamp_value = function(value, min_value, max_value)
       return self.ctx:clamp_value(value, min_value, max_value)
     end
+  })
+end
+
+function RuntimeGameplay:draw_primitive_snapshot()
+  local anchor = self:get_primitive_snapshot_anchor()
+  PrimitiveSnapshot.draw({
+    center_x = anchor.x,
+    center_y = anchor.y,
+    stats = self.ctx.terraforming_state.stats,
+    stat_order = self.ctx.STAT_ORDER,
+    stat_labels = self.ctx.STAT_LABELS,
+    get_stat_status = function(stat, value)
+      return self.ctx:get_stat_status(stat, value)
+    end,
+    format_signed = function(value)
+      return self.ctx:format_signed(value)
+    end,
+    node_radius = 30
   })
 end
 
@@ -281,6 +323,7 @@ function RuntimeGameplay:draw()
   Background.draw_stars()
   self.ctx.target:draw()
   self:draw_next_hazard_card()
+  self:draw_primitive_snapshot()
   self:draw_hud()
   self:draw_pile_widgets()
   self:draw_end_turn_button()

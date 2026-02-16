@@ -78,8 +78,8 @@ function RuntimeContext.new()
   }
 
   self.END_TURN_UI = {
-    width = 170,
-    height = 50,
+    width = 142,
+    height = 44,
     x_padding = 30,
     y = 520
   }
