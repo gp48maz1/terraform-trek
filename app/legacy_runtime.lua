@@ -17,6 +17,12 @@ local InfluenceLayout = require("ui.layout.influence_layout")
 local GameplayLayout = require("ui.layout.gameplay_layout")
 local CardLibraryLayout = require("ui.layout.card_library_layout")
 local CardLibraryState = require("app.card_library_state")
+local DeckWidget = require("ui.components.deck_widget")
+local EnergyOrb = require("ui.components.energy_orb")
+local HazardCard = require("ui.components.hazard_card")
+local GameplayHUD = require("ui.components.gameplay_hud")
+local ObjectivesPanel = require("ui.components.objectives_panel")
+local InfluenceExplain = require("ui.components.influence_explain")
 
 local VIEWPORT_REF_W = 1728
 local VIEWPORT_REF_H = 798
@@ -385,19 +391,6 @@ local function get_hazard_origin_label(origin)
   return labels[origin] or "Hazard"
 end
 
-local function get_hazard_origin_color(origin)
-  local colors = {
-    space = { 0.95, 0.62, 0.28, 1 },
-    atmospheric = { 0.55, 0.76, 0.97, 1 },
-    climate = { 0.75, 0.84, 0.95, 1 },
-    geologic = { 0.9, 0.57, 0.4, 1 },
-    biological = { 0.56, 0.86, 0.53, 1 },
-    chemical = { 0.94, 0.72, 0.36, 1 },
-    planetary = { 0.82, 0.84, 0.9, 1 }
-  }
-  return colors[origin] or { 0.82, 0.84, 0.9, 1 }
-end
-
 local function get_hazard_card_rect()
   return GameplayLayout.get_hazard_card_rect(get_safe_rect(), {
     x = target.x,
@@ -408,83 +401,17 @@ end
 
 local function draw_next_hazard_card()
   local projection = terraforming_state:preview_next_hazard()
-  local hazard = projection.hazard or {}
   local rect = get_hazard_card_rect()
-  local accent = get_hazard_origin_color(hazard.origin)
   local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 3.1)
-  local body_color = { 0.07, 0.09, 0.13, 0.95 }
-  local border_color = { accent[1], accent[2], accent[3], 1 }
-  local header_h = 24
-  local text_x = rect.x + 8
-  local text_w = rect.w - 16
-
-  love.graphics.setColor(unpack(body_color))
-  love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 8, 8)
-  love.graphics.setColor(border_color[1], border_color[2], border_color[3], 0.88 + pulse * 0.12)
-  love.graphics.setLineWidth(2)
-  love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 8, 8)
-  love.graphics.setLineWidth(1)
-
-  love.graphics.setColor(accent[1], accent[2], accent[3], 0.86)
-  love.graphics.rectangle("fill", rect.x, rect.y, rect.w, header_h, 8, 8)
-  love.graphics.setColor(0.03, 0.05, 0.08, 1)
-  love.graphics.printf("INCOMING", rect.x + 4, rect.y + 6, rect.w - 8, "center")
-
-  local line_y = rect.y + header_h + 6
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(hazard.name or "Hazard", text_x, line_y, text_w, "center")
-  line_y = line_y + 30
-
-  love.graphics.setColor(0.76, 0.87, 0.95, 1)
-  love.graphics.printf((hazard.category or "Event") .. " | " .. get_hazard_origin_label(hazard.origin), text_x, line_y, text_w, "center")
-  line_y = line_y + 28
-
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Raw: " .. format_delta_list(projection.raw_deltas), text_x, line_y, text_w, "left")
-  line_y = line_y + 30
-
-  if hazard.magnetosphere_blockable then
-    local level = terraforming_state:get_magnetosphere_level()
-    local tier = terraforming_state:get_magnetosphere_tier(level)
-    love.graphics.setColor(0.68, 0.87, 1, 1)
-    love.graphics.printf("Mag L" .. tostring(level) .. " (" .. tier .. ")", text_x, line_y, text_w, "left")
-    line_y = line_y + 18
-    love.graphics.setColor(0.86, 0.93, 1, 1)
-    love.graphics.printf("After block: " .. format_delta_list(projection.effective_deltas), text_x, line_y, text_w, "left")
-  else
-    love.graphics.setColor(0.9, 0.78, 0.42, 1)
-    love.graphics.printf("Bypasses magnetosphere", text_x, line_y, text_w, "left")
-  end
-
-  local start_x = rect.x + rect.w + 8
-  local start_y = rect.y + math.floor(rect.h * 0.5)
-  local end_x = target.x - target.radius - 10
-  local end_y = target.y
-  local dx = end_x - start_x
-  local dy = end_y - start_y
-  local length = math.sqrt(dx * dx + dy * dy)
-  if length > 0 then
-    local ux = dx / length
-    local uy = dy / length
-    local arrow_len = 9
-    local base_x = end_x - ux * 8
-    local base_y = end_y - uy * 8
-    local perp_x = -uy
-    local perp_y = ux
-    love.graphics.setColor(accent[1], accent[2], accent[3], 0.45 + pulse * 0.45)
-    love.graphics.setLineWidth(2)
-    love.graphics.line(start_x, start_y, end_x, end_y)
-    love.graphics.polygon(
-      "fill",
-      end_x,
-      end_y,
-      base_x + perp_x * (arrow_len * 0.45),
-      base_y + perp_y * (arrow_len * 0.45),
-      base_x - perp_x * (arrow_len * 0.45),
-      base_y - perp_y * (arrow_len * 0.45)
-    )
-    love.graphics.setLineWidth(1)
-  end
+  HazardCard.draw({
+    rect = rect,
+    projection = projection,
+    target = { x = target.x, y = target.y, radius = target.radius },
+    pulse = pulse,
+    format_delta_list = format_delta_list,
+    magnetosphere_level = terraforming_state:get_magnetosphere_level(),
+    magnetosphere_tier = terraforming_state:get_magnetosphere_tier(terraforming_state:get_magnetosphere_level())
+  })
 end
 
 local function edge_is_visible(edge)
@@ -803,89 +730,15 @@ local function draw_hand()
   end
 end
 
-local function draw_stats(start_y, start_x)
-  local base_x = start_x or 10
-  local base_y = start_y or 110
-  local line_height = show_real_world_values and 36 or 22
-
-  for i, key in ipairs(STAT_ORDER) do
-    local value = terraforming_state.stats[key]
-    local target_value = terraforming_state.targets[key]
-    local status, color = get_stat_status(key, value)
-    local y = base_y + (i - 1) * line_height
-
-    love.graphics.setColor(unpack(color))
-    love.graphics.print(
-      STAT_LABELS[key] .. ": " .. format_signed(value) .. " / target " .. format_signed(target_value) .. "  [" .. status .. "]",
-      base_x,
-      y
-    )
-
-    if show_real_world_values then
-      love.graphics.setColor(0.75, 0.84, 0.95, 1)
-      love.graphics.print("    " .. get_real_world_mapping(key, value), base_x, y + 16)
-    end
-  end
-
-  love.graphics.setColor(1, 1, 1, 1)
-end
-
 local function draw_card_pile_widget(rect, label, count, is_hovered)
-  local base_fill = { 0.08, 0.11, 0.16, 0.95 }
-  local hover_fill = { 0.12, 0.17, 0.24, 0.95 }
-  local border = is_hovered and { 0.85, 0.92, 1.0, 1 } or { 0.55, 0.67, 0.82, 1 }
-  local fill = is_hovered and hover_fill or base_fill
-
-  love.graphics.setColor(unpack(fill))
-  love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 8, 8)
-  love.graphics.setColor(unpack(border))
-  love.graphics.setLineWidth(2)
-  love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 8, 8)
-  love.graphics.setLineWidth(1)
-
-  local stack_w = rect.w - 46
-  local stack_h = rect.h - 72
-  local stack_x = rect.x + 23
-  local stack_y = rect.y + 34
-  for offset = 2, 0, -1 do
-    love.graphics.setColor(0.16 + offset * 0.03, 0.2 + offset * 0.03, 0.28 + offset * 0.03, 0.95)
-    love.graphics.rectangle("fill", stack_x + offset * 3, stack_y + offset * 2, stack_w, stack_h, 6, 6)
-    love.graphics.setColor(0.85, 0.88, 0.95, 0.9)
-    love.graphics.rectangle("line", stack_x + offset * 3, stack_y + offset * 2, stack_w, stack_h, 6, 6)
-  end
-
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(label, rect.x, rect.y + 10, rect.w, "center")
-  love.graphics.printf("x" .. tostring(count), rect.x, rect.y + rect.h - 24, rect.w, "center")
+  DeckWidget.draw(rect, label, count, is_hovered)
 end
 
 local function draw_energy_orb()
   local draw_rect = get_draw_pile_rect()
   local cx = draw_rect.x + math.floor(draw_rect.w * 0.5)
   local cy = draw_rect.y - 26
-  local radius = 20
-  local ratio = 0
-  if max_energy > 0 then
-    ratio = clamp_value(current_energy / max_energy, 0, 1)
-  end
-  local start_angle = -math.pi * 0.5
-  local end_angle = start_angle + (math.pi * 2 * ratio)
-
-  love.graphics.setColor(0.09, 0.1, 0.14, 0.96)
-  love.graphics.circle("fill", cx, cy, radius + 5)
-  love.graphics.setColor(0.88, 0.28, 0.28, 0.9)
-  love.graphics.setLineWidth(6)
-  love.graphics.arc("line", "open", cx, cy, radius + 1, 0, math.pi * 2)
-  love.graphics.setColor(0.95, 0.82, 0.35, 1)
-  if ratio > 0 then
-    love.graphics.arc("line", "open", cx, cy, radius + 1, start_angle, end_angle)
-  end
-  love.graphics.setLineWidth(1)
-
-  love.graphics.setColor(0.18, 0.14, 0.08, 1)
-  love.graphics.circle("fill", cx, cy, radius - 5)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(tostring(current_energy) .. "/" .. tostring(max_energy), cx - radius, cy - 6, radius * 2, "center")
+  EnergyOrb.draw(cx, cy, current_energy, max_energy)
 end
 
 local function draw_pile_widgets()
@@ -914,137 +767,41 @@ local function draw_end_turn_button()
 end
 
 local function draw_hud()
-  local safe = get_safe_rect()
-  local hud_x = safe.x + 4
-  local header_y = safe.y
-  local config = WORLD_CONFIGS[world_index]
-  local hazard_projection = terraforming_state:preview_next_hazard()
-  local hazard = hazard_projection.hazard or terraforming_state:get_next_hazard()
-  local economy = terraforming_state:get_economy_snapshot()
-  local magnetosphere_level = terraforming_state:get_magnetosphere_level()
-  local magnetosphere_tier = terraforming_state:get_magnetosphere_tier(magnetosphere_level)
-
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("World " .. world_index .. "/" .. #WORLD_CONFIGS .. ": " .. config.name .. " (" .. config.tier .. ")", hud_x, header_y)
-  love.graphics.print(
-    "Turn: " .. terraforming_state.turn .. "/" .. terraforming_state.turn_limit ..
-      "    Habitability: " .. terraforming_state.habitability .. "/" .. terraforming_state.goal,
-    hud_x,
-    header_y + 20
-  )
-  if hazard.magnetosphere_blockable then
-    love.graphics.setColor(0.7, 0.9, 1, 1)
-    love.graphics.print(
-      "Magnetosphere L" .. tostring(magnetosphere_level) .. " (" .. magnetosphere_tier .. ") blocks " ..
-        tostring(magnetosphere_level) .. "/stat -> " .. format_delta_list(hazard_projection.effective_deltas),
-      hud_x,
-      header_y + 40
-    )
-  else
-    love.graphics.setColor(0.9, 0.8, 0.42, 1)
-    love.graphics.print(
-      "Magnetosphere L" .. tostring(magnetosphere_level) .. " (" .. magnetosphere_tier ..
-        ") has no effect on this " .. string.lower(get_hazard_origin_label(hazard.origin)) .. " hazard.",
-      hud_x,
-      header_y + 40
-    )
-  end
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("Population: " .. tostring(economy.population) .. "    Profit: " .. tostring(economy.profit), hud_x, header_y + 60)
-
-  local stats_start_y = header_y + 80
-  draw_stats(stats_start_y, hud_x)
-  local line_height = show_real_world_values and 36 or 22
-  local stats_bottom_y = stats_start_y + (#STAT_ORDER * line_height)
-  local industry_y = stats_bottom_y + 12
-
-  local slot_parts = {}
-  for i = 1, terraforming_state:get_industry_slot_count() do
-    local industry = economy.industries[i]
-    if industry then
-      table.insert(slot_parts, tostring(i) .. ":" .. industry.name .. " " .. tostring(industry.health) .. "/" .. tostring(industry.max_health))
-    else
-      table.insert(slot_parts, tostring(i) .. ":Open")
-    end
-  end
-  love.graphics.print("Industry Slots: " .. table.concat(slot_parts, " | "), hud_x, industry_y)
-
-  if turn_summary then
-    local summary_y = industry_y + 38
-    love.graphics.print(
-      "Last Turn Hazard: " .. turn_summary.hazard .. " [" .. tostring(turn_summary.hazard_category or "Hazard") .. "]",
-      hud_x,
-      summary_y
-    )
-    love.graphics.print(
-      "Hazard Raw: " .. format_delta_list(turn_summary.hazard_raw_deltas or turn_summary.hazard_deltas),
-      hud_x,
-      summary_y + 20
-    )
-    if turn_summary.hazard_blockable then
-      love.graphics.print(
-        "Magnetosphere Block: " .. format_delta_list(turn_summary.hazard_blocked_deltas) ..
-          " -> Applied " .. format_delta_list(turn_summary.hazard_deltas),
-        hud_x,
-        summary_y + 40
-      )
-      summary_y = summary_y + 20
-    else
-      love.graphics.print("Applied Hazard Delta: " .. format_delta_list(turn_summary.hazard_deltas), hud_x, summary_y + 40)
-    end
-    love.graphics.print("Coupling Delta: " .. format_delta_list(turn_summary.coupling_deltas), hud_x, summary_y + 60)
-    love.graphics.print(
-      "Growth " .. turn_summary.growth .. " - Penalty " .. turn_summary.penalty .. " = Net " .. format_signed(turn_summary.net),
-      hud_x,
-      summary_y + 80
-    )
-    love.graphics.print(
-      "Population " .. format_signed(turn_summary.population_delta or 0) ..
-        " -> " .. tostring(turn_summary.projected_population or terraforming_state.population) ..
-        " | Profit " .. format_signed(turn_summary.profit_delta or 0) ..
-        " -> " .. tostring(turn_summary.projected_profit or terraforming_state.profit),
-      hud_x,
-      summary_y + 100
-    )
-  end
-
+  GameplayHUD.draw_hud({
+    safe_rect = get_safe_rect(),
+    world_index = world_index,
+    world_count = #WORLD_CONFIGS,
+    world_config = WORLD_CONFIGS[world_index],
+    terraforming_state = terraforming_state,
+    hazard_projection = terraforming_state:preview_next_hazard(),
+    economy_snapshot = terraforming_state:get_economy_snapshot(),
+    turn_summary = turn_summary,
+    show_real_world_values = show_real_world_values,
+    stat_order = STAT_ORDER,
+    stat_labels = STAT_LABELS,
+    get_stat_status = get_stat_status,
+    format_signed = format_signed,
+    get_real_world_mapping = get_real_world_mapping,
+    format_delta_list = format_delta_list,
+    get_hazard_origin_label = get_hazard_origin_label
+  })
 end
 
 local function draw_controls_hint()
   local safe = get_safe_rect()
   local hand_layout = get_hand_layout(#player_deck.hand)
-  local y = hand_layout.base_y - 48
-  y = clamp_value(y, safe.y + 12, safe.y + safe.h - 30)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print(
-    "Controls: Click card | E end turn | V influence map | M real-world mapping | R restart",
-    safe.x + 4,
-    y
-  )
+  GameplayHUD.draw_controls_hint({
+    safe_rect = safe,
+    hand_base_y = hand_layout.base_y,
+    clamp_value = clamp_value
+  })
 end
 
 local function draw_status_overlay()
-  local width = love.graphics.getWidth()
-  local box_w = 620
-  local box_h = 130
-  local box_x = (width - box_w) / 2
-  local box_y = 140
-
-  love.graphics.setColor(0.05, 0.05, 0.08, 0.85)
-  love.graphics.rectangle("fill", box_x, box_y, box_w, box_h, 8, 8)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.rectangle("line", box_x, box_y, box_w, box_h, 8, 8)
-
-  if campaign_state == "world_won" then
-    love.graphics.printf("World Terraformed!", box_x, box_y + 24, box_w, "center")
-    love.graphics.printf("Press N for the next world.", box_x, box_y + 56, box_w, "center")
-  elseif campaign_state == "campaign_won" then
-    love.graphics.printf("Campaign Complete", box_x, box_y + 24, box_w, "center")
-    love.graphics.printf("You terraformed all worlds. Press R to restart.", box_x, box_y + 56, box_w, "center")
-  elseif campaign_state == "campaign_lost" then
-    love.graphics.printf("Terraforming Failed", box_x, box_y + 24, box_w, "center")
-    love.graphics.printf("Turn limit reached before habitability target. Press R to restart.", box_x, box_y + 56, box_w, "center")
-  end
+  GameplayHUD.draw_status_overlay({
+    screen_w = love.graphics.getWidth(),
+    campaign_state = campaign_state
+  })
 end
 
 local function draw_influence_edge(source, target, edge, highlight, current_delta)
@@ -1314,128 +1071,6 @@ local function get_forecast_mode_label(active_mode)
   return "Current"
 end
 
-local function get_quality_label(quality)
-  if quality == "good" then
-    return "Good"
-  elseif quality == "ok" then
-    return "Ok"
-  end
-  return "Bad"
-end
-
-local function get_quality_score(quality)
-  if quality == "good" then
-    return 1
-  elseif quality == "ok" then
-    return 0
-  end
-  return -1
-end
-
-local function build_population_snapshot_breakdown(snapshot)
-  local quality = {}
-  local scores = {}
-  local primitive_sum = 0
-  local good_count = 0
-
-  for _, key in ipairs(STAT_ORDER) do
-    local grade = terraforming_state:get_stat_quality(key, snapshot[key])
-    local score = get_quality_score(grade)
-    quality[key] = grade
-    scores[key] = score
-    primitive_sum = primitive_sum + score
-    if score > 0 then
-      good_count = good_count + 1
-    end
-  end
-
-  local synergy = 0
-  if good_count >= 2 then
-    synergy = math.min(4, good_count)
-  end
-
-  return {
-    quality = quality,
-    scores = scores,
-    primitive = primitive_sum,
-    good_count = good_count,
-    synergy = synergy,
-    delta = 1 + primitive_sum + synergy
-  }
-end
-
-local function build_profit_snapshot_breakdown(active_summary, slot_count)
-  if not active_summary or not active_summary.industry_report then
-    return nil
-  end
-
-  local report = active_summary.industry_report
-  local terms = {}
-  local term_text = {}
-  local total = 0
-  for i = 1, slot_count do
-    local slot = report[i]
-    local income = 0
-    local status = "open"
-    if slot and not slot.empty then
-      if slot.destroyed then
-        status = "destroyed"
-      else
-        income = slot.income or 0
-        status = "active"
-      end
-    end
-    total = total + income
-    terms[i] = { income = income, status = status }
-    table.insert(term_text, "S" .. tostring(i) .. " " .. format_signed(income))
-  end
-
-  return {
-    terms = terms,
-    term_text = term_text,
-    total = total
-  }
-end
-
-local function get_score_color(score)
-  if score > 0 then
-    return { 0.66, 0.92, 0.64, 1 }, { 0.12, 0.24, 0.16, 1 }
-  elseif score < 0 then
-    return { 0.98, 0.62, 0.58, 1 }, { 0.24, 0.13, 0.13, 1 }
-  end
-  return { 0.76, 0.84, 0.95, 1 }, { 0.12, 0.16, 0.22, 1 }
-end
-
-local function draw_end_objective_metric_graph(rect, y, label, current_value, active_value, bar_color)
-  local bar_x = rect.x + 14
-  local bar_y = y + 18
-  local bar_w = rect.w - 28
-  local bar_h = 14
-  local scale_max = math.max(10, current_value, active_value)
-  local current_t = clamp_value(current_value / scale_max, 0, 1)
-  local active_t = clamp_value(active_value / scale_max, 0, 1)
-
-  local line = label .. ": " .. tostring(current_value)
-  if active_value ~= current_value then
-    line = line .. " -> " .. tostring(active_value) .. " (" .. format_signed(active_value - current_value) .. ")"
-  end
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(line, rect.x + 14, y, rect.w - 28, "left")
-
-  love.graphics.setColor(0.08, 0.1, 0.14, 1)
-  love.graphics.rectangle("fill", bar_x, bar_y, bar_w, bar_h, 5, 5)
-  love.graphics.setColor(bar_color[1], bar_color[2], bar_color[3], 0.95)
-  love.graphics.rectangle("fill", bar_x + 1, bar_y + 1, math.floor((bar_w - 2) * current_t), bar_h - 2, 4, 4)
-  love.graphics.setColor(0.72, 0.82, 0.96, 1)
-  love.graphics.rectangle("line", bar_x, bar_y, bar_w, bar_h, 5, 5)
-
-  local marker_x = bar_x + math.floor((bar_w - 2) * active_t)
-  love.graphics.setColor(0.48, 0.74, 1.0, 1)
-  love.graphics.setLineWidth(2)
-  love.graphics.line(marker_x, bar_y - 1, marker_x, bar_y + bar_h + 1)
-  love.graphics.setLineWidth(1)
-end
-
 local function draw_wrapped_line(text, x, y, width, color, line_height)
   if color then
     love.graphics.setColor(unpack(color))
@@ -1465,36 +1100,6 @@ local function fit_single_line(text, max_width)
     return suffix
   end
   return trimmed .. suffix
-end
-
-local function calculate_profit_flow_totals(active_industries, profit_breakdown, population_value, slot_count)
-  local base_total = 0
-  local pop_bonus_total = 0
-  local income_total = 0
-
-  for i = 1, slot_count do
-    local industry = active_industries[i]
-    if industry then
-      local base_income = industry.base_profit or 0
-      local income = nil
-      if profit_breakdown and profit_breakdown.terms and profit_breakdown.terms[i] then
-        income = profit_breakdown.terms[i].income
-      end
-      if income == nil then
-        local pop_bonus = math.floor((population_value or 0) * (industry.population_factor or 0) + 0.5)
-        income = base_income + pop_bonus
-      end
-      base_total = base_total + base_income
-      pop_bonus_total = pop_bonus_total + (income - base_income)
-      income_total = income_total + income
-    end
-  end
-
-  return {
-    base_total = base_total,
-    pop_bonus_total = pop_bonus_total,
-    income_total = income_total
-  }
 end
 
 initialize_card_library_state = function()
@@ -1780,720 +1385,58 @@ local function handle_card_library_keypressed(key)
   end
 end
 
-local function draw_end_objectives_explain_overlay(
-  rect,
-  mode_text,
-  current_breakdown,
-  active_breakdown,
-  current_population,
-  active_population,
-  current_profit,
-  active_profit,
-  profit_delta,
-  active_snapshot,
-  active_industries,
-  industry_report
-)
-  local panel_x = rect.x + 8
-  local panel_y = rect.y + 8
-  local panel_w = rect.w - 16
-  local panel_h = rect.h - 50
-
-  love.graphics.setColor(0.04, 0.06, 0.1, 1)
-  love.graphics.rectangle("fill", panel_x, panel_y, panel_w, panel_h, 10, 10)
-  love.graphics.setColor(0.72, 0.82, 0.96, 1)
-  love.graphics.rectangle("line", panel_x, panel_y, panel_w, panel_h, 10, 10)
-
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Population + Profit Explainer (" .. mode_text .. ")", panel_x + 12, panel_y + 12, panel_w - 24, "left")
-
-  local text_x = panel_x + 12
-  local text_w = panel_w - 24
-  local line_y = panel_y + 34
-  local limit_y = panel_y + panel_h - 18
-  local section_color = { 0.75, 0.87, 0.95, 1 }
-  local body_color = { 1, 1, 1, 1 }
-
-  line_y = draw_wrapped_line(
-    "Population thresholds: Good <= " .. tostring(terraforming_state.population_good_threshold) ..
-      " => +1, Ok <= " .. tostring(terraforming_state.population_ok_threshold) .. " => 0, Bad => -1.",
-    text_x,
-    line_y,
-    text_w,
-    section_color,
-    16
-  )
-  if line_y > limit_y then
-    return
-  end
-
-  line_y = draw_wrapped_line("Population math terms:", text_x, line_y + 2, text_w, section_color, 16)
-  if line_y > limit_y then
-    return
-  end
-
-  if active_breakdown and active_snapshot then
-    for _, key in ipairs(STAT_ORDER) do
-      if line_y > limit_y then
-        break
-      end
-      local value = active_snapshot[key] or 0
-      local target = terraforming_state.targets[key] or 0
-      local distance = math.abs(value - target)
-      local quality = active_breakdown.quality[key]
-      local score = active_breakdown.scores[key] or 0
-      local detail_line =
-        STAT_LABELS[key] .. ": value " .. format_signed(value) ..
-        ", target " .. format_signed(target) ..
-        ", |delta| " .. tostring(distance) ..
-        " => " .. get_quality_label(quality) .. " (" .. format_signed(score) .. ")"
-      line_y = draw_wrapped_line(detail_line, text_x, line_y, text_w, body_color, 16)
-    end
-  end
-
-  if line_y > limit_y then
-    return
-  end
-
-  if active_breakdown then
-    local s = active_breakdown.scores or {}
-    local c = (current_breakdown and current_breakdown.scores) or s
-    line_y = draw_wrapped_line(
-      "Current -> " .. mode_text .. " score shift: Heat " .. format_signed(c.heat or 0) .. " -> " .. format_signed(s.heat or 0) ..
-        ", Air " .. format_signed(c.air or 0) .. " -> " .. format_signed(s.air or 0) ..
-        ", Water " .. format_signed(c.water or 0) .. " -> " .. format_signed(s.water or 0) ..
-        ", Soil " .. format_signed(c.soil or 0) .. " -> " .. format_signed(s.soil or 0) .. ".",
-      text_x,
-      line_y + 2,
-      text_w,
-      body_color,
-      16
-    )
-    if line_y > limit_y then
-      return
-    end
-
-    line_y = draw_wrapped_line(
-      "Synergy: if good_count >= 2 then synergy = min(4, good_count), else 0. good_count = " ..
-        tostring(active_breakdown.good_count or 0) .. ", synergy = " .. format_signed(active_breakdown.synergy or 0) .. ".",
-      text_x,
-      line_y,
-      text_w,
-      body_color,
-      16
-    )
-    if line_y > limit_y then
-      return
-    end
-
-    line_y = draw_wrapped_line(
-      "DeltaPopulation = +1 + primitive_sum + synergy = +1 + " ..
-        format_signed(active_breakdown.primitive or 0) .. " + " ..
-        format_signed(active_breakdown.synergy or 0) .. " = " .. format_signed(active_breakdown.delta or 0) .. ".",
-      text_x,
-      line_y,
-      text_w,
-      body_color,
-      16
-    )
-    if line_y > limit_y then
-      return
-    end
-
-    line_y = draw_wrapped_line(
-      "NextPopulation = " .. tostring(current_population or 0) .. " + (" ..
-        format_signed(active_breakdown.delta or 0) .. ") = " .. tostring(active_population or 0) .. ".",
-      text_x,
-      line_y,
-      text_w,
-      body_color,
-      16
-    )
-    if line_y > limit_y then
-      return
-    end
-  end
-
-  line_y = draw_wrapped_line("Profit math terms:", text_x, line_y + 2, text_w, section_color, 16)
-  if line_y > limit_y then
-    return
-  end
-  line_y = draw_wrapped_line(
-    "Per surviving slot: income = base_profit + round(pop_after_turn * population_factor). Destroyed/open slots contribute 0.",
-    text_x,
-    line_y,
-    text_w,
-    section_color,
-    16
-  )
-  if line_y > limit_y then
-    return
-  end
-
-  local slot_count = terraforming_state:get_industry_slot_count()
-  if industry_report then
-    local terms = {}
-    for i = 1, slot_count do
-      if line_y > limit_y then
-        break
-      end
-      local report = industry_report[i]
-      local industry = active_industries and active_industries[i] or nil
-      local line
-      local color = { 0.85, 0.9, 0.96, 1 }
-      if report and not report.empty then
-        if report.destroyed then
-          line = "Slot " .. tostring(i) .. " " .. tostring(report.name or "Industry") .. ": destroyed => income 0."
-          color = { 0.98, 0.55, 0.52, 1 }
-          table.insert(terms, "S" .. tostring(i) .. " 0")
-        else
-          local base_income = industry and (industry.base_profit or 0) or 0
-          local income = report.income or 0
-          local pop_bonus = income - base_income
-          line = "Slot " .. tostring(i) .. " " .. tostring(report.name or "Industry") ..
-            ": income = " .. tostring(base_income) .. " + " .. tostring(pop_bonus) .. " = +" .. tostring(income)
-          if (report.damage or 0) > 0 then
-            line = line .. ", damage " .. tostring(report.damage)
-            color = { 0.95, 0.84, 0.48, 1 }
-          end
-          if report.reasons and #report.reasons > 0 then
-            line = line .. " (" .. table.concat(report.reasons, ", ") .. ")"
-          end
-          table.insert(terms, "S" .. tostring(i) .. " " .. format_signed(income))
-        end
-      else
-        line = "Slot " .. tostring(i) .. ": open => income 0."
-        color = { 0.62, 0.72, 0.84, 1 }
-        table.insert(terms, "S" .. tostring(i) .. " 0")
-      end
-      line_y = draw_wrapped_line(line, text_x, line_y, text_w, color, 16)
-    end
-
-    if line_y > limit_y then
-      return
-    end
-
-    line_y = draw_wrapped_line(
-      "DeltaProfit = " .. table.concat(terms, " + ") .. " = " .. format_signed(profit_delta or 0) .. ".",
-      text_x,
-      line_y + 2,
-      text_w,
-      body_color,
-      16
-    )
-    if line_y > limit_y then
-      return
-    end
-
-    draw_wrapped_line(
-      "NextProfit = " .. tostring(current_profit or 0) .. " + (" .. format_signed(profit_delta or 0) ..
-        ") = " .. tostring(active_profit or 0) .. ".",
-      text_x,
-      line_y,
-      text_w,
-      body_color,
-      16
-    )
-  else
-    line_y = draw_wrapped_line(
-      "No end-turn profit projection in Current mode. Pick Do Nothing or Selected Card to compute DeltaProfit.",
-      text_x,
-      line_y,
-      text_w,
-      body_color,
-      16
-    )
-    if line_y > limit_y then
-      return
-    end
-    draw_wrapped_line(
-      "Current slots: installed industries are listed in the objective panel; projected slot income terms appear once a forecast mode is chosen.",
-      text_x,
-      line_y,
-      text_w,
-      body_color,
-      16
-    )
-  end
-end
 
 local function draw_end_objectives_panel(layout, forecast_ctx)
-  local rect = layout.objectives_rect
-  local mode_text = get_forecast_mode_label(forecast_ctx.active_mode)
-  local active_snapshot = forecast_ctx.active_snapshot
-  local active_summary = forecast_ctx.active_summary
-  local current_population = forecast_ctx.current_economy.population
-  local current_profit = forecast_ctx.current_economy.profit
-  local active_population = forecast_ctx.active_economy.population
-  local active_profit = forecast_ctx.active_economy.profit
-  local magnetosphere_level = terraforming_state:get_magnetosphere_level()
-  local magnetosphere_tier = terraforming_state:get_magnetosphere_tier(magnetosphere_level)
-  local slot_count = terraforming_state:get_industry_slot_count()
-  local active_industries = forecast_ctx.active_economy.industries or {}
-  local current_breakdown = build_population_snapshot_breakdown(terraforming_state.stats or {})
-  local active_breakdown = build_population_snapshot_breakdown(active_snapshot or {})
-  local population_delta = active_summary and (active_summary.population_delta or active_breakdown.delta) or active_breakdown.delta
-  local profit_delta = active_summary and (active_summary.profit_delta or 0) or 0
-  local industry_report = active_summary and active_summary.industry_report or nil
-  local profit_breakdown = build_profit_snapshot_breakdown(active_summary, slot_count)
-  local profit_flow = calculate_profit_flow_totals(active_industries, profit_breakdown, active_population, slot_count)
-  local projected_profit_gain = profit_breakdown and profit_delta or profit_flow.income_total
-
-  local explain_button = get_objectives_explain_button(layout)
-
-  love.graphics.setColor(0.06, 0.08, 0.12, 1)
-  love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 10, 10)
-  love.graphics.setColor(0.72, 0.82, 0.96, 1)
-  love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 10, 10)
-
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("End Objectives", rect.x + 14, rect.y + 12, rect.w - 28, "left")
-  love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf(
-    "Mode: " .. mode_text ..
-      "  |  Hab " .. tostring(terraforming_state.habitability) .. "/" .. tostring(terraforming_state.goal) ..
-      "  |  Mag L" .. tostring(magnetosphere_level) .. " " .. magnetosphere_tier,
-    rect.x + 14,
-    rect.y + 34,
-    rect.w - 28,
-    "left"
-  )
-
-  local primitive_header_y = rect.y + 56
-  local tile_gap = 8
-  local tile_w = math.floor((rect.w - 28 - (tile_gap * 3)) / 4)
-  local tile_h = 52
-  local tile_y = primitive_header_y + 16
-
-  love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf("Primitive Status (-1 / 0 / +1)", rect.x + 14, primitive_header_y, rect.w - 28, "left")
-  for i, key in ipairs(STAT_ORDER) do
-    local tile_x = rect.x + 14 + ((i - 1) * (tile_w + tile_gap))
-    local current_score = current_breakdown.scores[key]
-    local active_score = active_breakdown.scores[key]
-    local active_quality = active_breakdown.quality[key]
-    local border_color, fill_color = get_score_color(active_score)
-    love.graphics.setColor(unpack(fill_color))
-    love.graphics.rectangle("fill", tile_x, tile_y, tile_w, tile_h, 8, 8)
-    love.graphics.setColor(unpack(border_color))
-    love.graphics.rectangle("line", tile_x, tile_y, tile_w, tile_h, 8, 8)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf(STAT_LABELS[key], tile_x + 6, tile_y + 5, tile_w - 12, "center")
-    love.graphics.printf("Now " .. format_signed(active_score) .. " " .. get_quality_label(active_quality), tile_x + 6, tile_y + 20, tile_w - 12, "center")
-    local score_text = "From " .. format_signed(current_score)
-    if active_score ~= current_score then
-      score_text = score_text .. " -> " .. format_signed(active_score)
-    end
-    love.graphics.printf(score_text, tile_x + 6, tile_y + 35, tile_w - 12, "center")
-  end
-
-  local bars_y = tile_y + tile_h + 10
-  draw_end_objective_metric_graph(rect, bars_y, "Population", current_population, active_population, { 0.35, 0.66, 0.42 })
-  draw_end_objective_metric_graph(rect, bars_y + 48, "Profit", current_profit, active_profit, { 0.66, 0.56, 0.24 })
-
-  local flow_title_y = bars_y + 90
-  love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf("Profit Flow", rect.x + 14, flow_title_y, rect.w - 28, "left")
-
-  local flow_gap = 8
-  local flow_box_w = math.floor((rect.w - 28 - (flow_gap * 2)) / 3)
-  local flow_box_h = 40
-  local flow_y = flow_title_y + 16
-  local flow_x = rect.x + 14
-
-  local flow_labels = {
-    {
-      title = "Population Bonus",
-      value = format_signed(profit_flow.pop_bonus_total)
-    },
-    {
-      title = "Industry Base",
-      value = format_signed(profit_flow.base_total)
-    },
-    {
-      title = "Projected Profit Gain",
-      value = format_signed(projected_profit_gain)
-    }
-  }
-
-  for i, item in ipairs(flow_labels) do
-    local box_x = flow_x + ((i - 1) * (flow_box_w + flow_gap))
-    local fill = { 0.12, 0.16, 0.22, 1 }
-    local border = { 0.58, 0.72, 0.9, 1 }
-    if i == 3 then
-      fill = item.value:sub(1, 1) == "-" and { 0.24, 0.13, 0.13, 1 } or { 0.12, 0.23, 0.15, 1 }
-      border = item.value:sub(1, 1) == "-" and { 0.9, 0.5, 0.45, 1 } or { 0.62, 0.9, 0.6, 1 }
-    end
-    love.graphics.setColor(unpack(fill))
-    love.graphics.rectangle("fill", box_x, flow_y, flow_box_w, flow_box_h, 7, 7)
-    love.graphics.setColor(unpack(border))
-    love.graphics.rectangle("line", box_x, flow_y, flow_box_w, flow_box_h, 7, 7)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf(item.title, box_x + 6, flow_y + 7, flow_box_w - 12, "center")
-    love.graphics.printf(item.value, box_x + 6, flow_y + 22, flow_box_w - 12, "center")
-  end
-
-  for i = 1, 2 do
-    local left_x = flow_x + (i * flow_box_w) + ((i - 1) * flow_gap)
-    local right_x = left_x + flow_gap
-    local arrow_y = flow_y + math.floor(flow_box_h * 0.5)
-    love.graphics.setColor(0.72, 0.82, 0.96, 1)
-    love.graphics.setLineWidth(2)
-    love.graphics.line(left_x + 2, arrow_y, right_x - 8, arrow_y)
-    love.graphics.polygon("fill", right_x - 8, arrow_y - 4, right_x - 8, arrow_y + 4, right_x - 2, arrow_y)
-    love.graphics.setLineWidth(1)
-  end
-
-  local slot_gap = 8
-  local slot_w = math.floor((rect.w - 28 - ((slot_count - 1) * slot_gap)) / slot_count)
-  local slot_h = 44
-  local slot_target_y = flow_y + flow_box_h + 30
-  local slot_max_y = explain_button.y - 8 - slot_h
-  local slot_y = math.min(slot_target_y, slot_max_y)
-
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Industry Slots (income per turn)", rect.x + 14, slot_y - 18, rect.w - 28, "left")
-  for i = 1, terraforming_state:get_industry_slot_count() do
-    local slot_x = rect.x + 14 + ((i - 1) * (slot_w + slot_gap))
-    local industry = active_industries[i]
-    local term = profit_breakdown and profit_breakdown.terms and profit_breakdown.terms[i] or nil
-    local fill = { 0.08, 0.1, 0.14, 1 }
-    local border = { 0.48, 0.58, 0.7, 1 }
-    if industry then
-      local hp_ratio = industry.health / math.max(1, industry.max_health)
-      if hp_ratio <= 0.34 then
-        fill = { 0.24, 0.12, 0.12, 1 }
-        border = { 0.86, 0.45, 0.4, 1 }
-      elseif hp_ratio <= 0.67 then
-        fill = { 0.24, 0.2, 0.1, 1 }
-        border = { 0.93, 0.75, 0.42, 1 }
-      else
-        fill = { 0.12, 0.22, 0.15, 1 }
-        border = { 0.62, 0.9, 0.6, 1 }
-      end
-    else
-      fill = { 0.08, 0.1, 0.14, 1 }
-      border = { 0.45, 0.55, 0.68, 1 }
-    end
-
-    love.graphics.setColor(unpack(fill))
-    love.graphics.rectangle("fill", slot_x, slot_y, slot_w, slot_h, 8, 8)
-    love.graphics.setColor(unpack(border))
-    love.graphics.rectangle("line", slot_x, slot_y, slot_w, slot_h, 8, 8)
-
-    love.graphics.setColor(1, 1, 1, 1)
-    if industry then
-      local base_income = industry.base_profit or 0
-      local income_value
-      if term and term.income ~= nil then
-        income_value = term.income
-      else
-        local pop_bonus = math.floor((active_population or current_population) * (industry.population_factor or 0) + 0.5)
-        income_value = base_income + pop_bonus
-      end
-      local pop_bonus_value = income_value - base_income
-      local name_text = industry.name
-      if #name_text > 18 then
-        name_text = string.sub(name_text, 1, 17) .. "..."
-      end
-      local line_1 = fit_single_line(tostring(i) .. ". " .. name_text, slot_w - 12)
-      local line_2 = fit_single_line(
-        "Inc " .. format_signed(income_value) .. "/turn (B " ..
-          format_signed(base_income) .. ", P " .. format_signed(pop_bonus_value) .. ")",
-        slot_w - 12
-      )
-      love.graphics.printf(line_1, slot_x + 6, slot_y + 8, slot_w - 12, "left")
-      love.graphics.printf(line_2, slot_x + 6, slot_y + 28, slot_w - 12, "left")
-    else
-      local destroyed = industry_report and industry_report[i] and industry_report[i].destroyed
-      love.graphics.setColor(destroyed and 0.98 or 0.75, destroyed and 0.55 or 0.87, destroyed and 0.52 or 0.95, 1)
-      local line_1 = fit_single_line(tostring(i) .. ". " .. (destroyed and "Destroyed" or "Open"), slot_w - 12)
-      love.graphics.printf(line_1, slot_x + 6, slot_y + 8, slot_w - 12, "left")
-      love.graphics.printf("Income +0 / turn", slot_x + 6, slot_y + 28, slot_w - 12, "left")
-    end
-  end
-
-  if influence_ui.show_objectives_explain then
-    draw_end_objectives_explain_overlay(
-      rect,
-      mode_text,
-      current_breakdown,
-      active_breakdown,
-      current_population,
-      active_population,
-      current_profit,
-      active_profit,
-      profit_delta,
-      active_snapshot,
-      active_industries,
-      industry_report
-    )
-  end
-
-  local explain_fill = influence_ui.show_objectives_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
-  if influence_ui.hovered_objectives_explain_button and not influence_ui.show_objectives_explain then
-    explain_fill = { 0.18, 0.24, 0.33, 1 }
-  end
-  local explain_border = influence_ui.show_objectives_explain and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
-  love.graphics.setColor(unpack(explain_fill))
-  love.graphics.rectangle("fill", explain_button.x, explain_button.y, explain_button.w, explain_button.h, 7, 7)
-  love.graphics.setColor(unpack(explain_border))
-  love.graphics.rectangle("line", explain_button.x, explain_button.y, explain_button.w, explain_button.h, 7, 7)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf(influence_ui.show_objectives_explain and "Hide Objectives" or "Explain Objectives", explain_button.x + 4, explain_button.y + 6, explain_button.w - 8, "center")
+  ObjectivesPanel.draw({
+    rect = layout.objectives_rect,
+    layout = layout,
+    forecast_ctx = forecast_ctx,
+    influence_ui = influence_ui,
+    terraforming_state = terraforming_state,
+    stat_order = STAT_ORDER,
+    stat_labels = STAT_LABELS,
+    format_signed = format_signed,
+    clamp_value = clamp_value,
+    get_forecast_mode_label = get_forecast_mode_label,
+    get_objectives_explain_button = get_objectives_explain_button
+  })
 end
 
 local function draw_influence_details(rect, forecast_ctx)
-  local snapshot = forecast_ctx.active_snapshot
-  local value = snapshot[influence_ui.focused_stat]
-  local help = INFLUENCE_HELP[influence_ui.focused_stat]
-  local status, color = get_stat_status(influence_ui.focused_stat, value)
-  local coupling_signal = terraforming_state:get_source_coupling_signal(influence_ui.focused_stat, snapshot)
-  local coupling_rule_text = terraforming_state:get_coupling_rule_text(influence_ui.focused_stat)
-  local incoming_edges = {}
-  for _, edge in ipairs(INFLUENCE_EDGES) do
-    if edge.target == influence_ui.focused_stat then
-      table.insert(incoming_edges, edge)
-    end
-  end
-  local outgoing_edges = get_edges_from_stat(influence_ui.focused_stat)
-  local incoming_total = 0
-  local incoming_active = 0
-  for _, edge in ipairs(incoming_edges) do
-    local delta = get_context_edge_delta(forecast_ctx, edge)
-    incoming_total = incoming_total + delta
-    if delta ~= 0 then
-      incoming_active = incoming_active + 1
-    end
-  end
-  local outgoing_total = 0
-  local outgoing_active = 0
-  for _, edge in ipairs(outgoing_edges) do
-    local delta = get_context_edge_delta(forecast_ctx, edge)
-    outgoing_total = outgoing_total + delta
-    if delta ~= 0 then
-      outgoing_active = outgoing_active + 1
-    end
-  end
-  local mode_label = "Current"
-  if forecast_ctx.active_mode == "do_nothing" then
-    mode_label = "Do Nothing Forecast"
-  elseif forecast_ctx.active_mode == "selected" then
-    mode_label = "Selected Card Forecast"
-  else
-    mode_label = "Current State"
-  end
-
-  love.graphics.setColor(0.06, 0.08, 0.12, 1)
-  love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 10, 10)
-  love.graphics.setColor(0.72, 0.82, 0.96, 1)
-  love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 10, 10)
-
-  local text_x = rect.x + 14
-  local text_w = rect.w - 28
-  local line_y = rect.y + 14
-  local bottom_y = rect.y + rect.h - 14
-
-  line_y = draw_wrapped_line("Focused Primitive: " .. STAT_LABELS[influence_ui.focused_stat], text_x, line_y, text_w, { 1, 1, 1, 1 }, 16)
-  line_y = draw_wrapped_line("Reference: " .. mode_label, text_x, line_y + 2, text_w, color, 16)
-  line_y = draw_wrapped_line("Notch: " .. format_signed(value) .. " (" .. status .. ")", text_x, line_y + 2, text_w, color, 16)
-  line_y = draw_wrapped_line(help.summary, text_x, line_y + 2, text_w, { 1, 1, 1, 1 }, 16)
-  line_y = draw_wrapped_line("Incoming: " .. help.incoming, text_x, line_y + 2, text_w, { 1, 1, 1, 1 }, 16)
-
-  local coupling_text = "Coupling signal: 0 (neutral) at this source state."
-  local coupling_color = { 0.98, 0.82, 0.35, 1 }
-  if coupling_signal > 0 then
-    coupling_text = "Coupling signal: " .. format_signed(coupling_signal) .. " (supportive) from this source state."
-    coupling_color = { 0.45, 0.95, 0.45, 1 }
-  elseif coupling_signal < 0 then
-    coupling_text = "Coupling signal: " .. format_signed(coupling_signal) .. " (stress) from this source state."
-    coupling_color = { 0.98, 0.62, 0.42, 1 }
-  end
-  line_y = draw_wrapped_line(coupling_text, text_x, line_y + 2, text_w, coupling_color, 16)
-  line_y = draw_wrapped_line(terraforming_state:get_coupling_rules_summary(), text_x, line_y + 2, text_w, { 1, 1, 1, 1 }, 16)
-  line_y = draw_wrapped_line(coupling_rule_text, text_x, line_y + 2, text_w, { 1, 1, 1, 1 }, 16)
-  line_y = draw_wrapped_line(
-    "Incoming net " .. format_signed(incoming_total) .. " (" ..
-      tostring(incoming_active) .. "/" .. tostring(#incoming_edges) .. " active) | Outgoing net " ..
-      format_signed(outgoing_total) .. " (" .. tostring(outgoing_active) .. "/" ..
-      tostring(#outgoing_edges) .. " active)",
-    text_x,
-    line_y + 2,
-    text_w,
-    { 1, 1, 1, 1 },
-    16
-  )
-
-  if show_real_world_values and (line_y + 18) < bottom_y then
-    draw_wrapped_line(get_real_world_mapping(influence_ui.focused_stat, value), text_x, line_y + 4, text_w, { 0.75, 0.87, 0.95, 1 }, 16)
-  end
+  InfluenceExplain.draw_details({
+    rect = rect,
+    forecast_ctx = forecast_ctx,
+    influence_ui = influence_ui,
+    terraforming_state = terraforming_state,
+    influence_edges = INFLUENCE_EDGES,
+    influence_help = INFLUENCE_HELP,
+    stat_order = STAT_ORDER,
+    stat_labels = STAT_LABELS,
+    format_signed = format_signed,
+    show_real_world_values = show_real_world_values,
+    get_real_world_mapping = get_real_world_mapping,
+    get_edges_from_stat = get_edges_from_stat,
+    get_context_edge_delta = get_context_edge_delta,
+    draw_wrapped_line = draw_wrapped_line,
+    get_stat_status = get_stat_status
+  })
 end
 
 local function draw_forecast_panel(rect, forecast_ctx)
-  local baseline = forecast_ctx.baseline
-  local scenario = forecast_ctx.scenario
-  local mode_buttons = get_forecast_mode_buttons(rect)
-  local current_population = forecast_ctx.current_economy.population
-  local current_profit = forecast_ctx.current_economy.profit
-
-  love.graphics.setColor(0.06, 0.08, 0.12, 1)
-  love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 10, 10)
-  love.graphics.setColor(0.72, 0.82, 0.96, 1)
-  love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 10, 10)
-
-  local text_x = rect.x + 14
-  local text_w = rect.w - 28
-  local line_y = rect.y + 12
-
-  line_y = draw_wrapped_line("End-Turn Forecast", text_x, line_y, text_w, { 1, 1, 1, 1 }, 16)
-  line_y = draw_wrapped_line(
-    "Hazard: " .. baseline.hazard .. " [" .. tostring(baseline.hazard_category or "Hazard") .. "]",
-    text_x,
-    line_y + 2,
-    text_w,
-    { 1, 1, 1, 1 },
-    16
-  )
-  line_y = draw_wrapped_line(
-    "Hazard raw: " .. format_delta_list(baseline.hazard_raw_deltas),
-    text_x,
-    line_y + 2,
-    text_w,
-    { 0.75, 0.87, 0.95, 1 },
-    16
-  )
-  if baseline.hazard_blockable then
-    line_y = draw_wrapped_line(
-      "Magnetosphere block: " .. format_delta_list(baseline.hazard_blocked_deltas) ..
-        " | Effective hazard: " .. format_delta_list(baseline.hazard_effective_deltas),
-      text_x,
-      line_y + 2,
-      text_w,
-      { 0.75, 0.87, 0.95, 1 },
-      16
-    )
-  else
-    line_y = draw_wrapped_line(
-      "Hazard bypasses magnetosphere. Effective hazard: " .. format_delta_list(baseline.hazard_effective_deltas),
-      text_x,
-      line_y + 2,
-      text_w,
-      { 0.75, 0.87, 0.95, 1 },
-      16
-    )
-  end
-  line_y = draw_wrapped_line(
-    "Map reference mode: " .. get_forecast_mode_label(forecast_ctx.active_mode),
-    text_x,
-    line_y + 2,
-    text_w,
-    { 0.75, 0.87, 0.95, 1 },
-    16
-  )
-
-  for _, button in ipairs(mode_buttons) do
-    local active = forecast_ctx.active_mode == button.id
-    local hovered = influence_ui.hovered_forecast_mode == button.id
-    local fill = active and { 0.24, 0.42, 0.26, 0.98 } or { 0.13, 0.18, 0.25, 0.98 }
-    local border = active and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
-    if hovered and not active then
-      fill = { 0.18, 0.24, 0.33, 0.98 }
-    end
-
-    love.graphics.setColor(unpack(fill))
-    love.graphics.rectangle("fill", button.x, button.y, button.w, button.h, 7, 7)
-    love.graphics.setColor(unpack(border))
-    love.graphics.rectangle("line", button.x, button.y, button.w, button.h, 7, 7)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf(button.text, button.x + 4, button.y + 6, button.w - 8, "center")
-  end
-
-  local function get_card_delta(summary, key)
-    local start_stats = summary and summary.start_stats or {}
-    local current = terraforming_state.stats[key] or 0
-    local start = start_stats[key] or current
-    return start - current
-  end
-
-  local function format_edge_terms(summary)
-    local terms = {}
-    local edge_deltas = summary and summary.coupling_edge_deltas or {}
-    for _, edge in ipairs(INFLUENCE_EDGES) do
-      local key = edge.source .. "->" .. edge.target
-      local delta = edge_deltas[key] or 0
-      if delta ~= 0 then
-        terms[#terms + 1] = edge.text .. " " .. format_signed(delta)
-      end
-    end
-    if #terms == 0 then
-      return "Coupling edges: none"
-    end
-    return "Coupling edges: " .. table.concat(terms, " | ")
-  end
-
-  local function draw_outcome_column(column_x, column_y, column_w, heading, summary, baseline_net, affordable_now)
-    local y = draw_wrapped_line(heading, column_x, column_y, column_w, { 1, 1, 1, 1 }, 16)
-    if not summary then
-      draw_wrapped_line("Select a card below to preview a one-card outcome.", column_x, y + 2, column_w, { 1, 1, 1, 1 }, 16)
-      return
-    end
-
-    if affordable_now == false then
-      y = draw_wrapped_line("Card unaffordable now (preview only).", column_x, y + 2, column_w, { 0.98, 0.65, 0.35, 1 }, 16)
-    end
-
-    for _, key in ipairs(STAT_ORDER) do
-      local current = terraforming_state.stats[key] or 0
-      local card_delta = get_card_delta(summary, key)
-      local hazard_delta = (summary.hazard_deltas and summary.hazard_deltas[key]) or 0
-      local coupling_delta = (summary.coupling_target_deltas_applied and summary.coupling_target_deltas_applied[key]) or
-        (summary.coupling_deltas and summary.coupling_deltas[key]) or 0
-      local projected = (summary.projected_stats and summary.projected_stats[key]) or current
-      local equation = STAT_LABELS[key] .. ": " .. format_signed(current) ..
-        " + card " .. format_signed(card_delta) ..
-        " + hazard " .. format_signed(hazard_delta) ..
-        " + coupling " .. format_signed(coupling_delta) ..
-        " = " .. format_signed(projected)
-      y = draw_wrapped_line(equation, column_x, y + 1, column_w, { 1, 1, 1, 1 }, 15)
-    end
-
-    local net_line = "Net Habitability: " .. format_signed(summary.net)
-    if baseline_net then
-      net_line = net_line .. " (" .. format_signed(summary.net - baseline_net) .. " vs do-nothing)"
-    end
-    y = draw_wrapped_line(net_line, column_x, y + 2, column_w, { 1, 1, 1, 1 }, 15)
-    y = draw_wrapped_line(
-      "Population: " .. tostring(current_population) .. " + " .. format_signed(summary.population_delta or 0) ..
-        " = " .. tostring(summary.projected_population or current_population),
-      column_x,
-      y + 1,
-      column_w,
-      { 1, 1, 1, 1 },
-      15
-    )
-    y = draw_wrapped_line(
-      "Profit: " .. tostring(current_profit) .. " + " .. format_signed(summary.profit_delta or 0) ..
-        " = " .. tostring(summary.projected_profit or current_profit),
-      column_x,
-      y + 1,
-      column_w,
-      { 1, 1, 1, 1 },
-      15
-    )
-    draw_wrapped_line(format_edge_terms(summary), column_x, y + 2, column_w, { 0.75, 0.87, 0.95, 1 }, 15)
-  end
-
-  local split_x = rect.x + math.floor(rect.w * 0.5)
-  draw_outcome_column(rect.x + 14, rect.y + 146, rect.w * 0.46, "Do Nothing Outcome", baseline)
-  draw_outcome_column(
-    split_x + 8,
-    rect.y + 146,
-    rect.w * 0.46 - 12,
-    "Selected Option Outcome",
-    scenario and scenario.summary or nil,
-    baseline.net,
-    scenario and scenario.affordable
-  )
+  InfluenceExplain.draw_forecast_panel({
+    rect = rect,
+    forecast_ctx = forecast_ctx,
+    mode_buttons = get_forecast_mode_buttons(rect),
+    influence_ui = influence_ui,
+    terraforming_state = terraforming_state,
+    influence_edges = INFLUENCE_EDGES,
+    stat_order = STAT_ORDER,
+    stat_labels = STAT_LABELS,
+    format_signed = format_signed,
+    format_delta_list = format_delta_list,
+    draw_wrapped_line = draw_wrapped_line,
+    get_forecast_mode_label = get_forecast_mode_label
+  })
 end
 
 local function draw_influence_cards(layout)
@@ -2600,13 +1543,77 @@ local function draw_influence_screen()
 end
 
 function Runtime.update(dt)
+  local active_scene = Runtime.get_active_scene()
+  if active_scene == "card_library" then
+    Runtime.update_card_library(dt)
+  elseif active_scene == "influence" then
+    Runtime.update_influence(dt)
+  else
+    Runtime.update_gameplay(dt)
+  end
+end
+
+function Runtime.draw()
+  local active_scene = Runtime.get_active_scene()
+  if active_scene == "card_library" then
+    Runtime.draw_card_library()
+  elseif active_scene == "influence" then
+    Runtime.draw_influence()
+  else
+    Runtime.draw_gameplay()
+  end
+end
+
+function Runtime.keypressed(key)
+  local active_scene = Runtime.get_active_scene()
+  if active_scene == "card_library" then
+    Runtime.keypressed_card_library(key)
+  elseif active_scene == "influence" then
+    Runtime.keypressed_influence(key)
+  else
+    Runtime.keypressed_gameplay(key)
+  end
+end
+
+function Runtime.mousepressed(x, y, button)
+  local active_scene = Runtime.get_active_scene()
+  if active_scene == "card_library" then
+    Runtime.mousepressed_card_library(x, y, button)
+  elseif active_scene == "influence" then
+    Runtime.mousepressed_influence(x, y, button)
+  else
+    Runtime.mousepressed_gameplay(x, y, button)
+  end
+end
+
+function Runtime.wheelmoved(_, y)
+  local active_scene = Runtime.get_active_scene()
+  if active_scene == "card_library" then
+    Runtime.wheelmoved_card_library(0, y)
+  elseif active_scene == "influence" then
+    Runtime.wheelmoved_influence(0, y)
+  else
+    Runtime.wheelmoved_gameplay(0, y)
+  end
+end
+
+local function map_pointer_to_ui(x, y)
+  local has_pointer = true
+  local mapped_x = x
+  local mapped_y = y
+  if viewport then
+    if viewport:is_inside(x, y) then
+      mapped_x, mapped_y = viewport:to_ui(x, y)
+    else
+      has_pointer = false
+    end
+  end
+  return has_pointer, mapped_x, mapped_y
+end
+
+function Runtime.update_gameplay(dt)
   if viewport then
     viewport:update(love.graphics.getDimensions())
-  end
-
-  if launch_mode == "cards" then
-    update_card_library_hover_state()
-    return
   end
 
   target:update(dt)
@@ -2618,132 +1625,147 @@ function Runtime.update(dt)
   hovered_end_turn = false
   influence_ui:reset_hover_state()
 
+  if campaign_state ~= "playing" then
+    return
+  end
+
   local raw_mx, raw_my = love.mouse.getPosition()
-  local has_pointer = true
-  local mx, my = raw_mx, raw_my
+  local has_pointer, mx, my = map_pointer_to_ui(raw_mx, raw_my)
+  if not has_pointer then
+    return
+  end
+
+  hovered_card_index = get_card_index_at_position(mx, my)
+  local draw_rect = get_draw_pile_rect()
+  hovered_draw_pile = point_in_rect(mx, my, draw_rect.x, draw_rect.y, draw_rect.w, draw_rect.h)
+  local discard_rect = get_discard_pile_rect()
+  hovered_discard_pile = point_in_rect(mx, my, discard_rect.x, discard_rect.y, discard_rect.w, discard_rect.h)
+  local end_turn_rect = get_end_turn_rect()
+  hovered_end_turn = point_in_rect(mx, my, end_turn_rect.x, end_turn_rect.y, end_turn_rect.w, end_turn_rect.h)
+end
+
+function Runtime.update_influence(_dt)
   if viewport then
-    if viewport:is_inside(raw_mx, raw_my) then
-      mx, my = viewport:to_ui(raw_mx, raw_my)
-    else
-      has_pointer = false
-    end
+    viewport:update(love.graphics.getDimensions())
   end
 
-  if has_pointer and view_mode == "gameplay" and campaign_state == "playing" then
-    hovered_card_index = get_card_index_at_position(mx, my)
+  target:update(0)
+  influence_ui:sanitize_selection(#player_deck.hand)
+  hovered_card_index = nil
+  hovered_draw_pile = false
+  hovered_discard_pile = false
+  hovered_end_turn = false
+  influence_ui:reset_hover_state()
 
-    local draw_rect = get_draw_pile_rect()
-    hovered_draw_pile = point_in_rect(mx, my, draw_rect.x, draw_rect.y, draw_rect.w, draw_rect.h)
-
-    local discard_rect = get_discard_pile_rect()
-    hovered_discard_pile = point_in_rect(mx, my, discard_rect.x, discard_rect.y, discard_rect.w, discard_rect.h)
-
-    local end_turn_rect = get_end_turn_rect()
-    hovered_end_turn = point_in_rect(mx, my, end_turn_rect.x, end_turn_rect.y, end_turn_rect.w, end_turn_rect.h)
+  if campaign_state ~= "playing" then
+    return
   end
 
-  if has_pointer and view_mode == "influence" and campaign_state == "playing" then
-    local layout = get_influence_layout()
-    local toggle_buttons = get_map_toggle_buttons(layout)
-    influence_ui.hovered_edge_filter_button = point_in_rect(mx, my, toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h)
-    influence_ui.hovered_graph_explain_button = point_in_rect(mx, my, toggle_buttons.explain_graph.x, toggle_buttons.explain_graph.y, toggle_buttons.explain_graph.w, toggle_buttons.explain_graph.h)
+  local raw_mx, raw_my = love.mouse.getPosition()
+  local has_pointer, mx, my = map_pointer_to_ui(raw_mx, raw_my)
+  if not has_pointer then
+    return
+  end
 
-    local explain_button = get_preview_explain_button(layout)
-    influence_ui.hovered_turn_explain_button = point_in_rect(mx, my, explain_button.x, explain_button.y, explain_button.w, explain_button.h)
+  local layout = get_influence_layout()
+  local toggle_buttons = get_map_toggle_buttons(layout)
+  influence_ui.hovered_edge_filter_button = point_in_rect(mx, my, toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h)
+  influence_ui.hovered_graph_explain_button = point_in_rect(mx, my, toggle_buttons.explain_graph.x, toggle_buttons.explain_graph.y, toggle_buttons.explain_graph.w, toggle_buttons.explain_graph.h)
 
-    local objectives_explain_button = get_objectives_explain_button(layout)
-    influence_ui.hovered_objectives_explain_button = point_in_rect(
-      mx,
-      my,
-      objectives_explain_button.x,
-      objectives_explain_button.y,
-      objectives_explain_button.w,
-      objectives_explain_button.h
-    )
+  local explain_button = get_preview_explain_button(layout)
+  influence_ui.hovered_turn_explain_button = point_in_rect(mx, my, explain_button.x, explain_button.y, explain_button.w, explain_button.h)
 
-    if influence_ui.show_turn_explain then
-      local forecast_buttons = get_forecast_mode_buttons(layout.turn_explain_rect)
-      for _, button in ipairs(forecast_buttons) do
-        if point_in_rect(mx, my, button.x, button.y, button.w, button.h) then
-          influence_ui.hovered_forecast_mode = button.id
-          break
-        end
-      end
-    end
+  local objectives_explain_button = get_objectives_explain_button(layout)
+  influence_ui.hovered_objectives_explain_button = point_in_rect(
+    mx,
+    my,
+    objectives_explain_button.x,
+    objectives_explain_button.y,
+    objectives_explain_button.w,
+    objectives_explain_button.h
+  )
 
-    for _, key in ipairs(STAT_ORDER) do
-      local node = layout.nodes[key]
-      if point_in_circle(mx, my, node.x, node.y, node.r) then
-        influence_ui.hovered_influence_stat = key
+  if influence_ui.show_turn_explain then
+    local forecast_buttons = get_forecast_mode_buttons(layout.turn_explain_rect)
+    for _, button in ipairs(forecast_buttons) do
+      if point_in_rect(mx, my, button.x, button.y, button.w, button.h) then
+        influence_ui.hovered_forecast_mode = button.id
         break
       end
     end
+  end
 
-    local card_rects = get_influence_card_rects(layout)
-    for i, rect in ipairs(card_rects) do
-      if point_in_rect(mx, my, rect.x, rect.y, rect.w, rect.h) then
-        influence_ui.hovered_forecast_option_index = i
-        break
-      end
+  for _, key in ipairs(STAT_ORDER) do
+    local node = layout.nodes[key]
+    if point_in_circle(mx, my, node.x, node.y, node.r) then
+      influence_ui.hovered_influence_stat = key
+      break
+    end
+  end
+
+  local card_rects = get_influence_card_rects(layout)
+  for i, rect in ipairs(card_rects) do
+    if point_in_rect(mx, my, rect.x, rect.y, rect.w, rect.h) then
+      influence_ui.hovered_forecast_option_index = i
+      break
     end
   end
 end
 
-function Runtime.draw()
-  if launch_mode == "cards" then
-    draw_card_library_screen()
-    return
+function Runtime.update_card_library(_dt)
+  if viewport then
+    viewport:update(love.graphics.getDimensions())
   end
+  update_card_library_hover_state()
+end
 
+function Runtime.draw_gameplay()
   if viewport then
     viewport:begin_draw()
   end
 
-  if view_mode == "gameplay" then
-    update_target_layout()
-    Background.draw_fill()
-    Background.draw_stars()
-    target:draw()
-    draw_next_hazard_card()
+  update_target_layout()
+  Background.draw_fill()
+  Background.draw_stars()
+  target:draw()
+  draw_next_hazard_card()
+  draw_hud()
+  draw_pile_widgets()
+  draw_end_turn_button()
+  draw_hand()
+  draw_controls_hint()
 
-    draw_hud()
-    draw_pile_widgets()
-    draw_end_turn_button()
-    draw_hand()
-    draw_controls_hint()
-
-    if campaign_state ~= "playing" then
-      draw_status_overlay()
-    end
-    if viewport then
-      viewport:end_draw()
-    end
-    return
+  if campaign_state ~= "playing" then
+    draw_status_overlay()
   end
 
+  if viewport then
+    viewport:end_draw()
+  end
+end
+
+function Runtime.draw_influence()
+  if viewport then
+    viewport:begin_draw()
+  end
   draw_influence_screen()
   if viewport then
     viewport:end_draw()
   end
 end
 
-function Runtime.keypressed(key)
-  if launch_mode == "cards" then
-    handle_card_library_keypressed(key)
-    return
-  end
+function Runtime.draw_card_library()
+  draw_card_library_screen()
+end
 
+function Runtime.keypressed_gameplay(key)
   if key == "r" then
     start_campaign()
     return
   end
 
   if key == "v" then
-    if view_mode == "gameplay" then
-      view_mode = "influence"
-    else
-      view_mode = "gameplay"
-    end
+    view_mode = "influence"
     return
   end
 
@@ -2768,65 +1790,33 @@ function Runtime.keypressed(key)
     return
   end
 
-  if view_mode == "influence" then
-    if key == "i" then
-      influence_ui:cycle_edge_filter_mode()
-      return
-    end
-
-    if key == "z" then
-      influence_ui:set_current_mode()
-      return
-    end
-
-    if key == "x" then
-      influence_ui:set_do_nothing_mode(false)
-      return
-    end
-
-    if key == "p" then
-      influence_ui:set_selected_or_do_nothing_mode()
-      return
-    end
-
-    if key == "c" then
-      influence_ui:set_current_mode()
-      return
-    end
-
-    local num = tonumber(key)
-    if num and num >= 1 and num <= #player_deck.hand then
-      influence_ui:set_selected_mode(num)
-    end
-    return
-  end
-
   local num = tonumber(key)
   if not num or num < 1 or num > #player_deck.hand then
     return
   end
-
   try_play_card(num)
 end
 
-function Runtime.mousepressed(x, y, button)
-  if button ~= 1 then
+function Runtime.keypressed_influence(key)
+  if key == "r" then
+    start_campaign()
     return
   end
 
-  if launch_mode == "cards" then
-    handle_card_library_mousepressed(x, y)
+  if key == "v" then
+    view_mode = "gameplay"
     return
   end
 
-  if viewport then
-    if not viewport:is_inside(x, y) then
-      return
-    end
-    x, y = viewport:to_ui(x, y)
+  if key == "m" then
+    show_real_world_values = not show_real_world_values
+    return
   end
 
   if campaign_state == "world_won" then
+    if key == "n" then
+      setup_world(world_index + 1)
+    end
     return
   end
 
@@ -2834,87 +1824,163 @@ function Runtime.mousepressed(x, y, button)
     return
   end
 
-  if view_mode == "influence" then
-    local layout = get_influence_layout()
-    local toggle_buttons = get_map_toggle_buttons(layout)
-    if point_in_rect(x, y, toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h) then
-      influence_ui:cycle_edge_filter_mode()
-      return
-    end
-
-    if point_in_rect(x, y, toggle_buttons.explain_graph.x, toggle_buttons.explain_graph.y, toggle_buttons.explain_graph.w, toggle_buttons.explain_graph.h) then
-      influence_ui:toggle_graph_explain()
-      return
-    end
-
-    local explain_button = get_preview_explain_button(layout)
-    if point_in_rect(x, y, explain_button.x, explain_button.y, explain_button.w, explain_button.h) then
-      influence_ui:toggle_turn_explain()
-      return
-    end
-
-    local objectives_explain_button = get_objectives_explain_button(layout)
-    if point_in_rect(
-      x,
-      y,
-      objectives_explain_button.x,
-      objectives_explain_button.y,
-      objectives_explain_button.w,
-      objectives_explain_button.h
-    ) then
-      influence_ui:toggle_objectives_explain()
-      return
-    end
-
-    if influence_ui.show_turn_explain then
-      local forecast_buttons = get_forecast_mode_buttons(layout.turn_explain_rect)
-      for _, button in ipairs(forecast_buttons) do
-        if point_in_rect(x, y, button.x, button.y, button.w, button.h) then
-          influence_ui:set_current_mode()
-          return
-        end
-      end
-    end
-
-    for _, key in ipairs(STAT_ORDER) do
-      local node = layout.nodes[key]
-      if point_in_circle(x, y, node.x, node.y, node.r) then
-        influence_ui.focused_stat = key
-        return
-      end
-    end
-
-    local card_rects = get_influence_card_rects(layout)
-    for i, rect in ipairs(card_rects) do
-      if point_in_rect(x, y, rect.x, rect.y, rect.w, rect.h) then
-        local option = rect.option
-        if option.kind == "do_nothing" then
-          influence_ui:set_do_nothing_mode(true)
-        else
-          influence_ui:set_selected_mode(option.card_index)
-        end
-        return
-      end
-    end
-    return
-  end
-
-  local end_turn_rect = get_end_turn_rect()
-  if point_in_rect(x, y, end_turn_rect.x, end_turn_rect.y, end_turn_rect.w, end_turn_rect.h) then
+  if key == "e" then
     end_turn()
     return
   end
 
-  local card_index = get_card_index_at_position(x, y)
+  if key == "i" then
+    influence_ui:cycle_edge_filter_mode()
+    return
+  end
+
+  if key == "z" then
+    influence_ui:set_current_mode()
+    return
+  end
+
+  if key == "x" then
+    influence_ui:set_do_nothing_mode(false)
+    return
+  end
+
+  if key == "p" then
+    influence_ui:set_selected_or_do_nothing_mode()
+    return
+  end
+
+  if key == "c" then
+    influence_ui:set_current_mode()
+    return
+  end
+
+  local num = tonumber(key)
+  if num and num >= 1 and num <= #player_deck.hand then
+    influence_ui:set_selected_mode(num)
+  end
+end
+
+function Runtime.keypressed_card_library(key)
+  handle_card_library_keypressed(key)
+end
+
+function Runtime.mousepressed_gameplay(x, y, button)
+  if button ~= 1 then
+    return
+  end
+
+  local has_pointer, mapped_x, mapped_y = map_pointer_to_ui(x, y)
+  if not has_pointer then
+    return
+  end
+
+  if campaign_state ~= "playing" then
+    return
+  end
+
+  local end_turn_rect = get_end_turn_rect()
+  if point_in_rect(mapped_x, mapped_y, end_turn_rect.x, end_turn_rect.y, end_turn_rect.w, end_turn_rect.h) then
+    end_turn()
+    return
+  end
+
+  local card_index = get_card_index_at_position(mapped_x, mapped_y)
   if card_index then
     try_play_card(card_index)
   end
 end
 
-function Runtime.wheelmoved(_, y)
-  if launch_mode ~= "cards" then
+function Runtime.mousepressed_influence(x, y, button)
+  if button ~= 1 then
     return
   end
+
+  local has_pointer, mapped_x, mapped_y = map_pointer_to_ui(x, y)
+  if not has_pointer then
+    return
+  end
+
+  if campaign_state ~= "playing" then
+    return
+  end
+
+  local layout = get_influence_layout()
+  local toggle_buttons = get_map_toggle_buttons(layout)
+  if point_in_rect(mapped_x, mapped_y, toggle_buttons.filter.x, toggle_buttons.filter.y, toggle_buttons.filter.w, toggle_buttons.filter.h) then
+    influence_ui:cycle_edge_filter_mode()
+    return
+  end
+
+  if point_in_rect(mapped_x, mapped_y, toggle_buttons.explain_graph.x, toggle_buttons.explain_graph.y, toggle_buttons.explain_graph.w, toggle_buttons.explain_graph.h) then
+    influence_ui:toggle_graph_explain()
+    return
+  end
+
+  local explain_button = get_preview_explain_button(layout)
+  if point_in_rect(mapped_x, mapped_y, explain_button.x, explain_button.y, explain_button.w, explain_button.h) then
+    influence_ui:toggle_turn_explain()
+    return
+  end
+
+  local objectives_explain_button = get_objectives_explain_button(layout)
+  if point_in_rect(
+    mapped_x,
+    mapped_y,
+    objectives_explain_button.x,
+    objectives_explain_button.y,
+    objectives_explain_button.w,
+    objectives_explain_button.h
+  ) then
+    influence_ui:toggle_objectives_explain()
+    return
+  end
+
+  if influence_ui.show_turn_explain then
+    local forecast_buttons = get_forecast_mode_buttons(layout.turn_explain_rect)
+    for _, forecast_button in ipairs(forecast_buttons) do
+      if point_in_rect(mapped_x, mapped_y, forecast_button.x, forecast_button.y, forecast_button.w, forecast_button.h) then
+        influence_ui:set_current_mode()
+        return
+      end
+    end
+  end
+
+  for _, key in ipairs(STAT_ORDER) do
+    local node = layout.nodes[key]
+    if point_in_circle(mapped_x, mapped_y, node.x, node.y, node.r) then
+      influence_ui.focused_stat = key
+      return
+    end
+  end
+
+  local card_rects = get_influence_card_rects(layout)
+  for _, card_rect in ipairs(card_rects) do
+    if point_in_rect(mapped_x, mapped_y, card_rect.x, card_rect.y, card_rect.w, card_rect.h) then
+      local option = card_rect.option
+      if option.kind == "do_nothing" then
+        influence_ui:set_do_nothing_mode(true)
+      else
+        influence_ui:set_selected_mode(option.card_index)
+      end
+      return
+    end
+  end
+end
+
+function Runtime.mousepressed_card_library(x, y, button)
+  if button ~= 1 then
+    return
+  end
+  handle_card_library_mousepressed(x, y)
+end
+
+function Runtime.wheelmoved_gameplay(_, _)
+end
+
+function Runtime.wheelmoved_influence(_, _)
+end
+
+function Runtime.wheelmoved_card_library(_, y)
   handle_card_library_wheel(y)
 end
 
