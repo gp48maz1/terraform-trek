@@ -370,8 +370,6 @@ function ObjectivesPanel.draw(opts)
   local current_profit = forecast_ctx.current_economy.profit
   local active_population = forecast_ctx.active_economy.population
   local active_profit = forecast_ctx.active_economy.profit
-  local magnetosphere_level = opts.terraforming_state:get_magnetosphere_level()
-  local magnetosphere_tier = opts.terraforming_state:get_magnetosphere_tier(magnetosphere_level)
   local slot_count = opts.terraforming_state:get_industry_slot_count()
   local active_industries = forecast_ctx.active_economy.industries or {}
   local current_breakdown = build_population_snapshot_breakdown(opts.terraforming_state, opts.stat_order, opts.terraforming_state.stats or {})
@@ -394,8 +392,7 @@ function ObjectivesPanel.draw(opts)
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
   love.graphics.printf(
     "Mode: " .. mode_text ..
-      "  |  Hab " .. tostring(opts.terraforming_state.habitability) .. "/" .. tostring(opts.terraforming_state.goal) ..
-      "  |  Mag L" .. tostring(magnetosphere_level) .. " " .. magnetosphere_tier,
+      "  |  Hab " .. tostring(opts.terraforming_state.habitability) .. "/" .. tostring(opts.terraforming_state.goal),
     rect.x + 14,
     rect.y + 34,
     rect.w - 28,

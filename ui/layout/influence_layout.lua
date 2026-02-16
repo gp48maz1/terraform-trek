@@ -41,7 +41,7 @@ function InfluenceLayout.compute(safe_rect)
     h = top_h
   }
 
-  local map_header_h = 120
+  local map_header_h = 132
   local map_footer_h = 44
   local map_graph_rect = {
     x = map_rect.x + 14,

@@ -229,43 +229,41 @@ function RuntimeInfluence:draw_magnetosphere_field(layout)
   local base_r = magnetosphere.base_r
 
   local line_width = love.graphics.getLineWidth()
-  local left_center_x = cx - base_r * 0.1
-  local right_center_x = cx + base_r * 0.14
-  local left_rx_base = base_r * 0.44
-  local left_ry_base = base_r * 0.82
-  local right_rx_base = base_r * 1.02
-  local right_ry_base = base_r * 0.76
 
   love.graphics.setScissor(graph_rect.x + 2, graph_rect.y + 2, graph_rect.w - 4, graph_rect.h - 4)
 
   for i = 1, 5 do
     local t = (i - 1) / 4
-    local alpha = (0.04 + strength * 0.06) * (1.0 - t * 0.2)
-    local rx = left_rx_base + i * 12
-    local ry = left_ry_base + i * 10
+    local alpha = (0.03 + strength * 0.05) * (1.0 - t * 0.18)
+    local shell = base_r + (i - 1) * 14
+    local rx = shell * 0.82
+    local ry = shell * 0.96
     love.graphics.setColor(0.36, 0.67, 1.0, alpha)
     love.graphics.setLineWidth(math.max(1, 1.6 - t * 0.4))
-    draw_arc_polyline(left_center_x, cy, rx, ry, math.rad(118), math.rad(242), 24)
+    draw_arc_polyline(cx, cy, rx, ry, math.rad(112), math.rad(248), 26)
   end
 
   for i = 1, 5 do
     local t = (i - 1) / 4
-    local alpha = (0.035 + strength * 0.05) * (1.0 - t * 0.18)
-    local rx = right_rx_base + i * (20 + strength * 7)
-    local ry = right_ry_base + i * 12
+    local alpha = (0.032 + strength * 0.05) * (1.0 - t * 0.16)
+    local shell = base_r + i * 18
+    local rx = shell * (1.16 + strength * 0.18)
+    local ry = shell * 0.74
+    local tail_cx = cx + base_r * 0.28 + i * 5
     love.graphics.setColor(0.35, 0.62, 0.98, alpha)
     love.graphics.setLineWidth(math.max(1, 1.6 - t * 0.4))
-    draw_arc_polyline(right_center_x, cy, rx, ry, math.rad(-62), math.rad(62), 28)
+    draw_arc_polyline(tail_cx, cy, rx, ry, math.rad(-58), math.rad(58), 30)
   end
 
   local warm_alpha = 0.02 + (1.0 - strength) * 0.055
   for i = 1, 3 do
     local fade = 1 - (i - 1) * 0.22
-    local rx = left_rx_base + base_r * 0.25 + i * 16
-    local ry = left_ry_base + i * 14
+    local shock_cx = cx - base_r * 0.86
+    local rx = base_r * 0.58 + i * 14
+    local ry = base_r * 0.98 + i * 20
     love.graphics.setColor(0.96, 0.55, 0.25, warm_alpha * fade)
     love.graphics.setLineWidth(1.2)
-    draw_arc_polyline(left_center_x - base_r * 0.04, cy, rx, ry, math.rad(126), math.rad(234), 22)
+    draw_arc_polyline(shock_cx, cy, rx, ry, math.rad(106), math.rad(254), 24)
   end
 
   love.graphics.setScissor()
@@ -306,7 +304,8 @@ function RuntimeInfluence:draw_incoming_hazard_panel(layout)
       return self.ctx:format_delta_list(deltas)
     end,
     magnetosphere_level = mag_level,
-    magnetosphere_tier = mag_tier
+    magnetosphere_tier = mag_tier,
+    show_target_vector = false
   })
 end
 
@@ -315,6 +314,8 @@ function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
   local graph_rect = layout.map_graph_rect
   local snapshot = forecast_ctx.active_snapshot
   local toggle_buttons = self:get_map_toggle_buttons(layout)
+  local mag_level = self.ctx.terraforming_state:get_magnetosphere_level()
+  local mag_tier = self.ctx.terraforming_state:get_magnetosphere_tier(mag_level)
   local projection_label = "Viewing Current State"
   if forecast_ctx.active_mode ~= "current" then
     projection_label = "Viewing End-Turn Projection"
@@ -334,6 +335,9 @@ function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
   love.graphics.printf("Use Explain Graph for detailed coupling rules and focused primitive breakdown.", map_rect.x + 12, subtitle_y, map_rect.w - 24, "left")
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
   love.graphics.printf(projection_label, map_rect.x + 12, projection_y, map_rect.w - 24, "left")
+  local magnetosphere_y = projection_y + font_h + 2
+  love.graphics.setColor(0.68, 0.87, 1.0, 1)
+  love.graphics.printf("Magnetosphere: L" .. tostring(mag_level) .. " (" .. mag_tier .. ")", map_rect.x + 12, magnetosphere_y, map_rect.w - 24, "left")
 
   local filter_fill = self.ctx.influence_ui.hovered_edge_filter_button and { 0.2, 0.3, 0.4, 0.95 } or { 0.14, 0.19, 0.27, 0.95 }
   love.graphics.setColor(unpack(filter_fill))
@@ -355,7 +359,7 @@ function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf(self.ctx.influence_ui.show_graph_explain and "Hide Graph" or "Explain Graph", toggle_buttons.explain_graph.x + 4, toggle_buttons.explain_graph.y + 6, toggle_buttons.explain_graph.w - 8, "center")
 
-  local legend_row1_y = projection_y + font_h + 6
+  local legend_row1_y = magnetosphere_y + font_h + 6
   local legend_row2_y = legend_row1_y + font_h + 4
 
   love.graphics.setColor(0.45, 0.95, 0.45, 1)

@@ -53,9 +53,9 @@ local function run_compute_contract()
   expect_equal(result, "cards span full safe width", layout.cards_rect.w, safe.w)
 
   expect_equal(result, "graph rect is inset inside map panel", layout.map_graph_rect.x, layout.map_rect.x + 14)
-  expect_equal(result, "graph rect y offset", layout.map_graph_rect.y, layout.map_rect.y + 120)
+  expect_equal(result, "graph rect y offset", layout.map_graph_rect.y, layout.map_rect.y + 132)
   expect_equal(result, "graph rect width inset", layout.map_graph_rect.w, layout.map_rect.w - 28)
-  expect_equal(result, "graph rect height reserves footer", layout.map_graph_rect.h, layout.map_rect.h - 164)
+  expect_equal(result, "graph rect height reserves footer", layout.map_graph_rect.h, layout.map_rect.h - 176)
 
   expect_equal(result, "hazard card width cap", layout.hazard_card_rect.w, math.min(layout.hazard_rect.w - 20, 236))
   local expected_hazard_card_h = math.max(190, math.min(layout.hazard_rect.h - 62, 266))

@@ -35,6 +35,7 @@ end
 function HazardCard.draw(opts)
   local rect = opts.rect
   local target = opts.target
+  local show_target_vector = opts.show_target_vector ~= false
   local projection = opts.projection or {}
   local hazard = projection.hazard or {}
   local format_delta_list = opts.format_delta_list
@@ -85,34 +86,36 @@ function HazardCard.draw(opts)
     love.graphics.printf("Bypasses magnetosphere", text_x, line_y, text_w, "left")
   end
 
-  local start_x = rect.x + rect.w + 8
-  local start_y = rect.y + math.floor(rect.h * 0.5)
-  local end_x = target.x - target.radius - 10
-  local end_y = target.y
-  local dx = end_x - start_x
-  local dy = end_y - start_y
-  local length = math.sqrt(dx * dx + dy * dy)
-  if length > 0 then
-    local ux = dx / length
-    local uy = dy / length
-    local arrow_len = 9
-    local base_x = end_x - ux * 8
-    local base_y = end_y - uy * 8
-    local perp_x = -uy
-    local perp_y = ux
-    love.graphics.setColor(accent[1], accent[2], accent[3], 0.45 + pulse * 0.45)
-    love.graphics.setLineWidth(2)
-    love.graphics.line(start_x, start_y, end_x, end_y)
-    love.graphics.polygon(
-      "fill",
-      end_x,
-      end_y,
-      base_x + perp_x * (arrow_len * 0.45),
-      base_y + perp_y * (arrow_len * 0.45),
-      base_x - perp_x * (arrow_len * 0.45),
-      base_y - perp_y * (arrow_len * 0.45)
-    )
-    love.graphics.setLineWidth(1)
+  if show_target_vector and target then
+    local start_x = rect.x + rect.w + 8
+    local start_y = rect.y + math.floor(rect.h * 0.5)
+    local end_x = target.x - target.radius - 10
+    local end_y = target.y
+    local dx = end_x - start_x
+    local dy = end_y - start_y
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length > 0 then
+      local ux = dx / length
+      local uy = dy / length
+      local arrow_len = 9
+      local base_x = end_x - ux * 8
+      local base_y = end_y - uy * 8
+      local perp_x = -uy
+      local perp_y = ux
+      love.graphics.setColor(accent[1], accent[2], accent[3], 0.45 + pulse * 0.45)
+      love.graphics.setLineWidth(2)
+      love.graphics.line(start_x, start_y, end_x, end_y)
+      love.graphics.polygon(
+        "fill",
+        end_x,
+        end_y,
+        base_x + perp_x * (arrow_len * 0.45),
+        base_y + perp_y * (arrow_len * 0.45),
+        base_x - perp_x * (arrow_len * 0.45),
+        base_y - perp_y * (arrow_len * 0.45)
+      )
+      love.graphics.setLineWidth(1)
+    end
   end
 end
 
