@@ -13,23 +13,23 @@ function GameplayScene:exit()
 end
 
 function GameplayScene:update(dt)
-  self.runtime.update(dt)
+  self.runtime.update_gameplay(dt)
 end
 
 function GameplayScene:draw()
-  self.runtime.draw()
+  self.runtime.draw_gameplay()
 end
 
 function GameplayScene:keypressed(key)
-  self.runtime.keypressed(key)
+  self.runtime.keypressed_gameplay(key)
 end
 
 function GameplayScene:mousepressed(x, y, button)
-  self.runtime.mousepressed(x, y, button)
+  self.runtime.mousepressed_gameplay(x, y, button)
 end
 
 function GameplayScene:wheelmoved(dx, dy)
-  self.runtime.wheelmoved(dx, dy)
+  self.runtime.wheelmoved_gameplay(dx, dy)
 end
 
 function GameplayScene:resize(w, h)
