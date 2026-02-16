@@ -47,7 +47,7 @@ local function run_baseline_geometry_contract()
   local hand = GameplayLayout.get_hand_layout(safe, 5, hand_ui)
   local deck = GameplayLayout.get_deck_rect(safe, pile_ui)
   local discard = GameplayLayout.get_discard_rect(safe, pile_ui)
-  local end_turn = GameplayLayout.get_end_turn_rect(safe, hand, hand_ui, end_turn_ui)
+  local end_turn = GameplayLayout.get_end_turn_rect(safe, hand, hand_ui, end_turn_ui, pile_ui)
   local hazard = GameplayLayout.get_hazard_card_rect(safe, planet)
   add_log(result, "WHEN computing gameplay positions")
 
@@ -62,13 +62,14 @@ local function run_baseline_geometry_contract()
   expect_equal(result, "deck y", deck.y, 646)
   expect_equal(result, "discard x", discard.x, 1526)
   expect_equal(result, "discard y", discard.y, 646)
-  expect_equal(result, "end turn x", end_turn.x, 1446)
-  expect_equal(result, "end turn y", end_turn.y, 616)
+  expect_equal(result, "end turn x", end_turn.x, 1448)
+  expect_equal(result, "end turn y", end_turn.y, 582)
+  expect_equal(result, "end turn sits above discard", end_turn.y + end_turn.h < discard.y, true)
 
-  expect_near(result, "hazard x", hazard.x, 833.92, 0.001)
-  expect_near(result, "hazard y", hazard.y, 216.72, 0.001)
-  expect_equal(result, "hazard width", hazard.w, 132)
-  expect_equal(result, "hazard height", hazard.h, 170)
+  expect_near(result, "hazard x", hazard.x, 795.92, 0.001)
+  expect_near(result, "hazard y", hazard.y, 193.72, 0.001)
+  expect_equal(result, "hazard width", hazard.w, 170)
+  expect_equal(result, "hazard height", hazard.h, 236)
   return result
 end
 
@@ -82,9 +83,9 @@ local function run_hazard_clamp_contract()
   add_log(result, "WHEN hazard rect is clamped inside safe bounds")
 
   expect_equal(result, "hazard x clamps to min inset", hazard.x, 16)
-  expect_equal(result, "hazard y clamps to max inset", hazard.y, 74)
-  expect_equal(result, "hazard width fixed", hazard.w, 132)
-  expect_equal(result, "hazard height fixed", hazard.h, 170)
+  expect_equal(result, "hazard y clamps to max inset", hazard.y, 8)
+  expect_equal(result, "hazard width fixed", hazard.w, 170)
+  expect_equal(result, "hazard height fixed", hazard.h, 236)
   return result
 end
 
@@ -104,7 +105,7 @@ local function run_compute_parity_contract()
   local hand = GameplayLayout.get_hand_layout(safe, ui_state.hand_count, ui_state.hand_ui)
   local deck = GameplayLayout.get_deck_rect(safe, ui_state.pile_ui)
   local discard = GameplayLayout.get_discard_rect(safe, ui_state.pile_ui)
-  local end_turn = GameplayLayout.get_end_turn_rect(safe, hand, ui_state.hand_ui, ui_state.end_turn_ui)
+  local end_turn = GameplayLayout.get_end_turn_rect(safe, hand, ui_state.hand_ui, ui_state.end_turn_ui, ui_state.pile_ui)
   local hazard = GameplayLayout.get_hazard_card_rect(safe, planet)
   add_log(result, "WHEN comparing compute output to helper outputs")
 

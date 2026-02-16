@@ -35,6 +35,7 @@ local function run_default_state_contract()
   expect_equal(result, "graph explain starts hidden", state.show_graph_explain, false)
   expect_equal(result, "turn explain starts hidden", state.show_turn_explain, false)
   expect_equal(result, "objectives explain starts hidden", state.show_objectives_explain, false)
+  expect_equal(result, "help tooltip starts hidden", state.show_help_tooltip, false)
   return result
 end
 
@@ -98,6 +99,11 @@ local function run_explain_toggle_contract()
   expect_equal(result, "objectives explain toggles on independently", state.show_objectives_explain, true)
   state:toggle_objectives_explain()
   expect_equal(result, "objectives explain toggles off", state.show_objectives_explain, false)
+
+  state:toggle_help_tooltip()
+  expect_equal(result, "help tooltip toggles on", state.show_help_tooltip, true)
+  state:toggle_help_tooltip()
+  expect_equal(result, "help tooltip toggles off", state.show_help_tooltip, false)
   return result
 end
 

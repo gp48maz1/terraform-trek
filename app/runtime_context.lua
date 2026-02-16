@@ -78,8 +78,8 @@ function RuntimeContext.new()
   }
 
   self.END_TURN_UI = {
-    width = 170,
-    height = 50,
+    width = 142,
+    height = 44,
     x_padding = 30,
     y = 520
   }
@@ -290,7 +290,9 @@ function RuntimeContext:draw_wrapped_line(text, x, y, width, color, line_height)
   love.graphics.printf(text, x, y, width, "left")
   local font = love.graphics.getFont()
   local _, wrapped = font:getWrap(text, width)
-  return y + (math.max(1, #wrapped) * (line_height or 16))
+  local font_h = font:getHeight()
+  local effective_line_height = math.max(line_height or font_h, font_h + 2)
+  return y + (math.max(1, #wrapped) * effective_line_height)
 end
 
 function RuntimeContext:initialize_card_library_state()

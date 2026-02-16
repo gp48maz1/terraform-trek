@@ -110,16 +110,41 @@ local function draw_end_objective_metric_graph(rect, y, label, current_value, ac
 
   love.graphics.setColor(0.08, 0.1, 0.14, 1)
   love.graphics.rectangle("fill", bar_x, bar_y, bar_w, bar_h, 5, 5)
+  local inner_x = bar_x + 1
+  local inner_y = bar_y + 1
+  local inner_w = bar_w - 2
+  local inner_h = bar_h - 2
   love.graphics.setColor(bar_color[1], bar_color[2], bar_color[3], 0.95)
-  love.graphics.rectangle("fill", bar_x + 1, bar_y + 1, math.floor((bar_w - 2) * current_t), bar_h - 2, 4, 4)
+  love.graphics.rectangle("fill", inner_x, inner_y, math.floor(inner_w * current_t), inner_h, 4, 4)
+
+  if active_t ~= current_t then
+    local projection_start_t = math.min(current_t, active_t)
+    local projection_end_t = math.max(current_t, active_t)
+    local projection_x = inner_x + math.floor(inner_w * projection_start_t)
+    local projection_w = math.max(2, math.floor(inner_w * (projection_end_t - projection_start_t)))
+    local is_gain = active_t > current_t
+
+    local fill = is_gain and { 0.32, 0.58, 0.86, 0.26 } or { 0.84, 0.42, 0.42, 0.24 }
+    local stripe = is_gain and { 0.6, 0.84, 1.0, 0.55 } or { 1.0, 0.7, 0.66, 0.52 }
+    love.graphics.setColor(unpack(fill))
+    love.graphics.rectangle("fill", projection_x, inner_y, projection_w, inner_h, 3, 3)
+
+    love.graphics.setScissor(projection_x, inner_y, projection_w, inner_h)
+    love.graphics.setColor(unpack(stripe))
+    for sx = projection_x - inner_h, projection_x + projection_w + inner_h, 8 do
+      love.graphics.line(sx, inner_y + inner_h, sx + inner_h, inner_y)
+    end
+    love.graphics.setScissor()
+  end
+
   love.graphics.setColor(0.72, 0.82, 0.96, 1)
   love.graphics.rectangle("line", bar_x, bar_y, bar_w, bar_h, 5, 5)
 
-  local marker_x = bar_x + math.floor((bar_w - 2) * active_t)
-  love.graphics.setColor(0.48, 0.74, 1.0, 1)
-  love.graphics.setLineWidth(2)
-  love.graphics.line(marker_x, bar_y - 1, marker_x, bar_y + bar_h + 1)
-  love.graphics.setLineWidth(1)
+  if active_t ~= current_t then
+    local marker_x = inner_x + math.floor(inner_w * active_t)
+    love.graphics.setColor(0.48, 0.74, 1.0, 1)
+    love.graphics.circle("fill", marker_x, bar_y + math.floor(bar_h * 0.5), 3)
+  end
 end
 
 local function draw_wrapped_line(text, x, y, width, color, line_height)
@@ -131,7 +156,9 @@ local function draw_wrapped_line(text, x, y, width, color, line_height)
   love.graphics.printf(text, x, y, width, "left")
   local font = love.graphics.getFont()
   local _, wrapped = font:getWrap(text, width)
-  return y + (math.max(1, #wrapped) * (line_height or 16))
+  local font_h = font:getHeight()
+  local effective_line_height = math.max(line_height or font_h, font_h + 2)
+  return y + (math.max(1, #wrapped) * effective_line_height)
 end
 
 local function fit_single_line(text, max_width)
@@ -368,8 +395,6 @@ function ObjectivesPanel.draw(opts)
   local current_profit = forecast_ctx.current_economy.profit
   local active_population = forecast_ctx.active_economy.population
   local active_profit = forecast_ctx.active_economy.profit
-  local magnetosphere_level = opts.terraforming_state:get_magnetosphere_level()
-  local magnetosphere_tier = opts.terraforming_state:get_magnetosphere_tier(magnetosphere_level)
   local slot_count = opts.terraforming_state:get_industry_slot_count()
   local active_industries = forecast_ctx.active_economy.industries or {}
   local current_breakdown = build_population_snapshot_breakdown(opts.terraforming_state, opts.stat_order, opts.terraforming_state.stats or {})
@@ -392,8 +417,7 @@ function ObjectivesPanel.draw(opts)
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
   love.graphics.printf(
     "Mode: " .. mode_text ..
-      "  |  Hab " .. tostring(opts.terraforming_state.habitability) .. "/" .. tostring(opts.terraforming_state.goal) ..
-      "  |  Mag L" .. tostring(magnetosphere_level) .. " " .. magnetosphere_tier,
+      "  |  Hab " .. tostring(opts.terraforming_state.habitability) .. "/" .. tostring(opts.terraforming_state.goal),
     rect.x + 14,
     rect.y + 34,
     rect.w - 28,
@@ -403,7 +427,7 @@ function ObjectivesPanel.draw(opts)
   local primitive_header_y = rect.y + 56
   local tile_gap = 8
   local tile_w = math.floor((rect.w - 28 - (tile_gap * 3)) / 4)
-  local tile_h = 52
+  local tile_h = 56
   local tile_y = primitive_header_y + 16
 
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
@@ -419,20 +443,26 @@ function ObjectivesPanel.draw(opts)
     love.graphics.setColor(unpack(border_color))
     love.graphics.rectangle("line", tile_x, tile_y, tile_w, tile_h, 8, 8)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf(opts.stat_labels[key], tile_x + 6, tile_y + 5, tile_w - 12, "center")
-    love.graphics.printf("Now " .. opts.format_signed(active_score) .. " " .. get_quality_label(active_quality), tile_x + 6, tile_y + 20, tile_w - 12, "center")
+    local line_1 = fit_single_line(opts.stat_labels[key], tile_w - 12)
+    local line_2 = fit_single_line("Now " .. opts.format_signed(active_score) .. " " .. get_quality_label(active_quality), tile_w - 12)
     local score_text = "From " .. opts.format_signed(current_score)
     if active_score ~= current_score then
-      score_text = score_text .. " -> " .. opts.format_signed(active_score)
+      score_text = score_text .. " to " .. opts.format_signed(active_score)
     end
-    love.graphics.printf(score_text, tile_x + 6, tile_y + 35, tile_w - 12, "center")
+    local line_3 = fit_single_line(score_text, tile_w - 12)
+    love.graphics.printf(line_1, tile_x + 6, tile_y + 5, tile_w - 12, "center")
+    love.graphics.printf(line_2, tile_x + 6, tile_y + 21, tile_w - 12, "center")
+    love.graphics.printf(line_3, tile_x + 6, tile_y + 37, tile_w - 12, "center")
   end
 
-  local bars_y = tile_y + tile_h + 10
+  local bars_y = tile_y + tile_h + 8
   draw_end_objective_metric_graph(rect, bars_y, "Population", current_population, active_population, { 0.35, 0.66, 0.42 }, opts.format_signed, opts.clamp_value)
-  draw_end_objective_metric_graph(rect, bars_y + 48, "Profit", current_profit, active_profit, { 0.66, 0.56, 0.24 }, opts.format_signed, opts.clamp_value)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  local pop_breakdown = "Delta: +1 base + " .. opts.format_signed(active_breakdown.primitive) .. " primitive + " .. opts.format_signed(active_breakdown.synergy) .. " synergy"
+  love.graphics.printf(pop_breakdown, rect.x + 14, bars_y + 34, rect.w - 28, "left")
+  draw_end_objective_metric_graph(rect, bars_y + 58, "Profit", current_profit, active_profit, { 0.66, 0.56, 0.24 }, opts.format_signed, opts.clamp_value)
 
-  local flow_title_y = bars_y + 90
+  local flow_title_y = bars_y + 144
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
   love.graphics.printf("Profit Flow", rect.x + 14, flow_title_y, rect.w - 28, "left")
 
@@ -461,8 +491,8 @@ function ObjectivesPanel.draw(opts)
     love.graphics.setColor(unpack(border))
     love.graphics.rectangle("line", box_x, flow_y, flow_box_w, flow_box_h, 7, 7)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf(item.title, box_x + 6, flow_y + 7, flow_box_w - 12, "center")
-    love.graphics.printf(item.value, box_x + 6, flow_y + 22, flow_box_w - 12, "center")
+    love.graphics.printf(fit_single_line(item.title, flow_box_w - 12), box_x + 6, flow_y + 7, flow_box_w - 12, "center")
+    love.graphics.printf(fit_single_line(item.value, flow_box_w - 12), box_x + 6, flow_y + 22, flow_box_w - 12, "center")
   end
 
   for i = 1, 2 do

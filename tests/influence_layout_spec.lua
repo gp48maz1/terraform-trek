@@ -30,20 +30,47 @@ local function run_compute_contract()
   local layout = InfluenceLayout.compute(safe)
   add_log(result, "WHEN computing influence layout panels and nodes")
 
-  expect_equal(result, "map x", layout.map_rect.x, safe.x)
-  expect_equal(result, "map y offset", layout.map_rect.y, safe.y + 76)
-  expect_equal(result, "map width ratio", layout.map_rect.w, math.floor(safe.w * 0.54))
-  expect_equal(result, "map height ratio", layout.map_rect.h, math.floor(safe.h * 0.62))
+  expect_equal(result, "hazard x anchors to safe left", layout.hazard_rect.x, safe.x)
+  expect_equal(result, "hazard y offset", layout.hazard_rect.y, safe.y + 44)
+  expect_equal(result, "hazard width ratio floor", layout.hazard_rect.w, math.max(220, math.floor(safe.w * 0.18)))
+
+  local expected_cards_h = math.max(150, math.min(170, math.floor(safe.h * 0.20)))
+  expect_equal(result, "cards fixed compact height", layout.cards_rect.h, expected_cards_h)
+  expect_equal(result, "cards pinned to safe bottom", layout.cards_rect.y, safe.y + safe.h - expected_cards_h)
+
+  local expected_top_h = layout.cards_rect.y - layout.hazard_rect.y - 12
+  expect_equal(result, "hazard and top panels share computed top height", layout.hazard_rect.h, expected_top_h)
+  expect_equal(result, "map panel shares top height", layout.map_rect.h, expected_top_h)
+
+  local expected_map_x = layout.hazard_rect.x + layout.hazard_rect.w + 14
+  expect_equal(result, "map x follows hazard + gap", layout.map_rect.x, expected_map_x)
+  expect_equal(result, "map y offset", layout.map_rect.y, safe.y + 44)
+  expect_equal(result, "map width uses remainder split", layout.map_rect.w, safe.w - layout.hazard_rect.w - layout.objectives_rect.w - 28)
 
   local right_x = layout.map_rect.x + layout.map_rect.w + 14
   expect_equal(result, "objectives x follows map + gap", layout.objectives_rect.x, right_x)
   expect_equal(result, "objectives width fills remaining space", layout.objectives_rect.w, safe.x + safe.w - right_x)
   expect_equal(result, "cards span full safe width", layout.cards_rect.w, safe.w)
-  expect_equal(result, "cards start below map panel", layout.cards_rect.y, layout.map_rect.y + layout.map_rect.h + 12)
+
+  expect_equal(result, "graph rect is inset inside map panel", layout.map_graph_rect.x, layout.map_rect.x + 14)
+  expect_equal(result, "graph rect y offset", layout.map_graph_rect.y, layout.map_rect.y + 118)
+  expect_equal(result, "graph rect width inset", layout.map_graph_rect.w, layout.map_rect.w - 28)
+  expect_equal(result, "graph rect height reserves footer", layout.map_graph_rect.h, layout.map_rect.h - 162)
+
+  expect_equal(result, "hazard card width cap", layout.hazard_card_rect.w, math.min(layout.hazard_rect.w - 20, 236))
+  local expected_hazard_card_h = math.max(190, math.min(layout.hazard_rect.h - 62, 266))
+  local expected_hazard_card_y = layout.hazard_rect.y + 42
+  local expected_hazard_bottom = layout.hazard_rect.y + layout.hazard_rect.h - 10
+  if expected_hazard_card_y + expected_hazard_card_h > expected_hazard_bottom then
+    expected_hazard_card_h = math.max(160, expected_hazard_bottom - expected_hazard_card_y)
+  end
+  expect_equal(result, "hazard card height cap", layout.hazard_card_rect.h, expected_hazard_card_h)
 
   expect_equal(result, "heat and soil share x", layout.nodes.heat.x, layout.nodes.soil.x)
   expect_equal(result, "air and water share y", layout.nodes.air.y, layout.nodes.water.y)
   expect_equal(result, "all nodes share radius", layout.nodes.heat.r, layout.nodes.air.r)
+  expect_equal(result, "magnetosphere center x aligns with node axis", layout.magnetosphere.x, layout.nodes.heat.x)
+  expect_equal(result, "magnetosphere center y aligns with node axis", layout.magnetosphere.y, layout.nodes.air.y)
   return result
 end
 
@@ -54,6 +81,7 @@ local function run_controls_contract()
   add_log(result, "GIVEN computed influence layout")
   local toggles = InfluenceLayout.get_map_toggle_buttons(layout)
   local mode_buttons = InfluenceLayout.get_forecast_mode_buttons(layout.turn_explain_rect)
+  local help_button = InfluenceLayout.get_help_button(layout)
   local preview_button = InfluenceLayout.get_preview_explain_button(layout)
   local objectives_button = InfluenceLayout.get_objectives_explain_button(layout)
   add_log(result, "WHEN resolving button geometry")
@@ -62,8 +90,12 @@ local function run_controls_contract()
   expect_equal(result, "map explain button width", toggles.explain_graph.w, 154)
   expect_equal(result, "single forecast mode button currently available", #mode_buttons, 1)
   expect_equal(result, "forecast button id", mode_buttons[1].id, "current")
+  expect_equal(result, "help button width", help_button.w, 24)
+  expect_equal(result, "help button is left of preview explain", help_button.x, layout.cards_rect.x + 12)
   expect_equal(result, "preview explain button width", preview_button.w, 176)
+  expect_equal(result, "preview explain button shifted for help icon", preview_button.x, layout.cards_rect.x + 44)
   expect_equal(result, "objectives explain button width", objectives_button.w, 188)
+  expect_equal(result, "graph explain button remains in map footer", toggles.explain_graph.y, layout.map_rect.y + layout.map_rect.h - 34)
   return result
 end
 
@@ -86,8 +118,8 @@ local function run_card_rects_contract()
   expect_equal(result, "first option is do-nothing", card_rects[1].option.kind, "do_nothing")
   expect_equal(result, "second option is first hand card", card_rects[2].option.card_index, 1)
   expect_equal(result, "last option is fifth hand card", card_rects[6].option.card_index, 5)
-  expect_equal(result, "card width preserved", card_rects[1].w, 170)
-  expect_equal(result, "card height preserved", card_rects[1].h, 58)
+  expect_equal(result, "card width preserved", card_rects[1].w, 166)
+  expect_equal(result, "card height preserved", card_rects[1].h, 56)
   return result
 end
 

@@ -4,9 +4,24 @@ local InfluenceLayout = require("ui.layout.influence_layout")
 
 local ObjectivesPanel = require("ui.components.objectives_panel")
 local InfluenceExplain = require("ui.components.influence_explain")
+local HazardCard = require("ui.components.hazard_card")
 
 local RuntimeInfluence = {}
 RuntimeInfluence.__index = RuntimeInfluence
+
+local function draw_arc_polyline(cx, cy, rx, ry, start_angle, end_angle, segments)
+  segments = math.max(8, segments or 18)
+  local points = {}
+  for i = 0, segments do
+    local t = i / segments
+    local angle = start_angle + (end_angle - start_angle) * t
+    points[#points + 1] = cx + math.cos(angle) * rx
+    points[#points + 1] = cy + math.sin(angle) * ry
+  end
+  if #points >= 4 then
+    love.graphics.line(points)
+  end
+end
 
 function RuntimeInfluence.new(ctx)
   return setmetatable({ ctx = ctx }, RuntimeInfluence)
@@ -26,6 +41,10 @@ end
 
 function RuntimeInfluence:get_preview_explain_button(layout)
   return InfluenceLayout.get_preview_explain_button(layout)
+end
+
+function RuntimeInfluence:get_help_button(layout)
+  return InfluenceLayout.get_help_button(layout)
 end
 
 function RuntimeInfluence:get_objectives_explain_button(layout)
@@ -151,13 +170,13 @@ function RuntimeInfluence:draw_diamond(x, y, size, fill_color, border_color)
   end
 end
 
-function RuntimeInfluence:draw_stat_track(map_rect, node, stat_key, current_value, preview_value, target_value)
+function RuntimeInfluence:draw_stat_track(map_graph_rect, node, stat_key, current_value, preview_value, target_value)
   local bounds = self.ctx.terraforming_state:get_stat_bounds(stat_key)
   local track_w = math.floor(node.r * 1.6)
   local track_h = 12
   local track_x = math.floor(node.x - (track_w * 0.5))
   local track_y = math.floor(node.y - node.r - 20)
-  local min_track_y = map_rect.y + 86
+  local min_track_y = map_graph_rect.y + 8
   if track_y < min_track_y then
     track_y = min_track_y
   end
@@ -200,10 +219,94 @@ function RuntimeInfluence:draw_stat_track(map_rect, node, stat_key, current_valu
   end
 end
 
+function RuntimeInfluence:draw_magnetosphere_field(layout)
+  local magnetosphere = layout.magnetosphere
+  local graph_rect = layout.map_graph_rect
+  if not magnetosphere or not graph_rect or not layout.nodes then
+    return
+  end
+
+  local mag_level = self.ctx.terraforming_state:get_magnetosphere_level()
+  local strength = self.ctx:clamp_value((mag_level - 1) / 3, 0, 1)
+  local cy = magnetosphere.y
+  local left_bound = layout.nodes.air.x - layout.nodes.air.r
+  local right_bound = layout.nodes.water.x + layout.nodes.water.r
+  local vertical_span = math.max(120, (layout.nodes.soil.y - layout.nodes.heat.y) + (layout.nodes.heat.r * 2))
+  local graph_right = graph_rect.x + graph_rect.w - 14
+
+  local line_width = love.graphics.getLineWidth()
+
+  love.graphics.setScissor(graph_rect.x + 2, graph_rect.y + 2, graph_rect.w - 4, graph_rect.h - 4)
+
+  -- 4-shell simplified magnetosphere: compressed left side, pitched right tail.
+  for i = 1, 4 do
+    local t = (i - 1) / 3
+    local alpha = (0.028 + strength * 0.045) * (1.0 - t * 0.2)
+    local left_rx = 20 + i * 6
+    local left_ry = vertical_span * 0.40 + i * 6
+    local left_cx = (left_bound - 10) - left_rx
+
+    local right_cx = right_bound + 3 + i * 2
+    local right_target_rx = 52 + i * 11 + strength * 8
+    local right_rx = math.max(22, math.min(right_target_rx, graph_right - right_cx))
+    local right_ry = vertical_span * 0.30 + i * 6
+
+    love.graphics.setColor(0.36, 0.67, 1.0, alpha)
+    love.graphics.setLineWidth(math.max(1, 1.7 - t * 0.45))
+    draw_arc_polyline(left_cx, cy, left_rx, left_ry, math.rad(112), math.rad(248), 24)
+    draw_arc_polyline(right_cx, cy, right_rx, right_ry, math.rad(-48), math.rad(48), 28)
+  end
+
+  love.graphics.setScissor()
+  love.graphics.setLineWidth(line_width)
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+function RuntimeInfluence:draw_incoming_hazard_panel(layout)
+  local hazard_rect = layout.hazard_rect
+  local hazard_card_rect = layout.hazard_card_rect
+  if not hazard_rect or not hazard_card_rect then
+    return
+  end
+
+  local projection = self.ctx.terraforming_state:preview_next_hazard()
+  local mag_level = self.ctx.terraforming_state:get_magnetosphere_level()
+  local mag_tier = self.ctx.terraforming_state:get_magnetosphere_tier(mag_level)
+  local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 3.1)
+
+  love.graphics.setColor(0.06, 0.08, 0.12, 0.9)
+  love.graphics.rectangle("fill", hazard_rect.x, hazard_rect.y, hazard_rect.w, hazard_rect.h, 10, 10)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  love.graphics.rectangle("line", hazard_rect.x, hazard_rect.y, hazard_rect.w, hazard_rect.h, 10, 10)
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("Incoming Hazard", hazard_rect.x + 10, hazard_rect.y + 10, hazard_rect.w - 20, "left")
+
+  HazardCard.draw({
+    rect = hazard_card_rect,
+    projection = projection,
+    target = {
+      x = layout.magnetosphere.x,
+      y = layout.magnetosphere.y,
+      radius = math.floor(layout.magnetosphere.base_r * 0.62)
+    },
+    pulse = pulse,
+    format_delta_list = function(deltas)
+      return self.ctx:format_delta_list(deltas)
+    end,
+    magnetosphere_level = mag_level,
+    magnetosphere_tier = mag_tier,
+    show_target_vector = false
+  })
+end
+
 function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
   local map_rect = layout.map_rect
+  local graph_rect = layout.map_graph_rect
   local snapshot = forecast_ctx.active_snapshot
   local toggle_buttons = self:get_map_toggle_buttons(layout)
+  local mag_level = self.ctx.terraforming_state:get_magnetosphere_level()
+  local mag_tier = self.ctx.terraforming_state:get_magnetosphere_tier(mag_level)
   local projection_label = "Viewing Current State"
   if forecast_ctx.active_mode ~= "current" then
     projection_label = "Viewing End-Turn Projection"
@@ -215,10 +318,17 @@ function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
   love.graphics.rectangle("line", map_rect.x, map_rect.y, map_rect.w, map_rect.h, 10, 10)
 
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.printf("Core Influence Graph", map_rect.x + 12, map_rect.y + 10, map_rect.w - 24, "left")
-  love.graphics.printf("Use Explain Graph for detailed coupling rules and focused primitive breakdown.", map_rect.x + 12, map_rect.y + 30, map_rect.w - 24, "left")
+  local font_h = love.graphics.getFont():getHeight()
+  local title_y = map_rect.y + 10
+  local subtitle_y = title_y + font_h + 2
+  local projection_y = subtitle_y + font_h + 2
+  love.graphics.printf("Core Influence Graph", map_rect.x + 12, title_y, map_rect.w - 24, "left")
+  love.graphics.printf("Use Explain Graph for detailed coupling rules and focused primitive breakdown.", map_rect.x + 12, subtitle_y, map_rect.w - 24, "left")
   love.graphics.setColor(0.75, 0.87, 0.95, 1)
-  love.graphics.printf(projection_label, map_rect.x + 12, map_rect.y + 48, map_rect.w - 24, "left")
+  love.graphics.printf(projection_label, map_rect.x + 12, projection_y, map_rect.w - 24, "left")
+  local magnetosphere_y = projection_y + font_h + 2
+  love.graphics.setColor(0.68, 0.87, 1.0, 1)
+  love.graphics.printf("Magnetosphere: L" .. tostring(mag_level) .. " (" .. mag_tier .. ")", map_rect.x + 12, magnetosphere_y, map_rect.w - 24, "left")
 
   local filter_fill = self.ctx.influence_ui.hovered_edge_filter_button and { 0.2, 0.3, 0.4, 0.95 } or { 0.14, 0.19, 0.27, 0.95 }
   love.graphics.setColor(unpack(filter_fill))
@@ -240,26 +350,30 @@ function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf(self.ctx.influence_ui.show_graph_explain and "Hide Graph" or "Explain Graph", toggle_buttons.explain_graph.x + 4, toggle_buttons.explain_graph.y + 6, toggle_buttons.explain_graph.w - 8, "center")
 
-  love.graphics.setColor(0.45, 0.95, 0.45, 1)
-  love.graphics.circle("fill", map_rect.x + 18, map_rect.y + 58, 7)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("+ target impact", map_rect.x + 30, map_rect.y + 51)
-  love.graphics.setColor(0.98, 0.45, 0.45, 1)
-  love.graphics.circle("fill", map_rect.x + 156, map_rect.y + 58, 7)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("- target impact", map_rect.x + 168, map_rect.y + 51)
-  love.graphics.setColor(0.62, 0.66, 0.74, 1)
-  love.graphics.circle("fill", map_rect.x + 292, map_rect.y + 58, 7)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("0 neutral", map_rect.x + 304, map_rect.y + 51)
+  local legend_row1_y = magnetosphere_y + font_h + 6
+  local legend_row2_y = legend_row1_y + font_h + 4
 
-  local marker_legend_y = map_rect.y + 68
-  self:draw_diamond(map_rect.x + 18, marker_legend_y + 1, 5, { 1, 1, 1, 1 }, { 0.05, 0.08, 0.12, 1 })
+  love.graphics.setColor(0.45, 0.95, 0.45, 1)
+  love.graphics.circle("fill", map_rect.x + 18, legend_row1_y + 7, 7)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("current", map_rect.x + 30, marker_legend_y - 6)
-  self:draw_diamond(map_rect.x + 124, marker_legend_y + 1, 5, { 0.45, 0.78, 1.0, 1 }, { 0.05, 0.08, 0.12, 1 })
+  love.graphics.print("+ target impact", map_rect.x + 30, legend_row1_y)
+  love.graphics.setColor(0.98, 0.45, 0.45, 1)
+  love.graphics.circle("fill", map_rect.x + 166, legend_row1_y + 7, 7)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("preview (card push)", map_rect.x + 136, marker_legend_y - 6)
+  love.graphics.print("- target impact", map_rect.x + 178, legend_row1_y)
+  love.graphics.setColor(0.62, 0.66, 0.74, 1)
+  love.graphics.circle("fill", map_rect.x + 314, legend_row1_y + 7, 7)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("0 neutral", map_rect.x + 326, legend_row1_y)
+
+  self:draw_diamond(map_rect.x + 18, legend_row2_y + 8, 5, { 1, 1, 1, 1 }, { 0.05, 0.08, 0.12, 1 })
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("current", map_rect.x + 30, legend_row2_y + 1)
+  self:draw_diamond(map_rect.x + 124, legend_row2_y + 8, 5, { 0.45, 0.78, 1.0, 1 }, { 0.05, 0.08, 0.12, 1 })
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.print("preview (card push)", map_rect.x + 136, legend_row2_y + 1)
+
+  self:draw_magnetosphere_field(layout)
 
   for _, edge in ipairs(self.ctx.INFLUENCE_EDGES) do
     if self:edge_is_visible(edge) then
@@ -283,7 +397,7 @@ function RuntimeInfluence:draw_influence_nodes(layout, forecast_ctx)
     local is_focused = key == self.ctx.influence_ui.focused_stat
     local is_hovered = key == self.ctx.influence_ui.hovered_influence_stat
 
-    self:draw_stat_track(map_rect, node, key, current_value, preview_value, self.ctx.terraforming_state.targets[key])
+    self:draw_stat_track(graph_rect, node, key, current_value, preview_value, self.ctx.terraforming_state.targets[key])
 
     love.graphics.setColor(0.08, 0.1, 0.14, 0.95)
     love.graphics.circle("fill", node.x, node.y, node.r)
@@ -391,6 +505,7 @@ end
 function RuntimeInfluence:draw_influence_cards(layout)
   local rect = layout.cards_rect
   local card_rects = self:get_influence_card_rects(layout)
+  local help_button = self:get_help_button(layout)
   local explain_button = self:get_preview_explain_button(layout)
 
   love.graphics.setColor(0.06, 0.08, 0.12, 0.92)
@@ -400,6 +515,18 @@ function RuntimeInfluence:draw_influence_cards(layout)
 
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.printf("Preview Selector (Do Nothing or card). Use Current above to clear preview.", rect.x + 10, rect.y + 10, rect.w - 20, "left")
+
+  local help_fill = self.ctx.influence_ui.show_help_tooltip and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
+  if self.ctx.influence_ui.hovered_help_button and not self.ctx.influence_ui.show_help_tooltip then
+    help_fill = { 0.18, 0.24, 0.33, 1 }
+  end
+  local help_border = self.ctx.influence_ui.show_help_tooltip and { 0.65, 0.95, 0.64, 1 } or { 0.62, 0.78, 0.95, 1 }
+  love.graphics.setColor(unpack(help_fill))
+  love.graphics.rectangle("fill", help_button.x, help_button.y, help_button.w, help_button.h, 7, 7)
+  love.graphics.setColor(unpack(help_border))
+  love.graphics.rectangle("line", help_button.x, help_button.y, help_button.w, help_button.h, 7, 7)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("?", help_button.x, help_button.y + 4, help_button.w, "center")
 
   local turn_fill = self.ctx.influence_ui.show_turn_explain and { 0.24, 0.42, 0.26, 1 } or { 0.13, 0.18, 0.25, 1 }
   if self.ctx.influence_ui.hovered_turn_explain_button and not self.ctx.influence_ui.show_turn_explain then
@@ -460,22 +587,71 @@ function RuntimeInfluence:draw_influence_cards(layout)
   end
 end
 
+function RuntimeInfluence:draw_screen_header(safe)
+  local title = "Core Influence Map (V)"
+  local font = love.graphics.getFont()
+  local box_w = font:getWidth(title) + 26
+  local box_h = font:getHeight() + 10
+  local box_x = safe.x + math.floor((safe.w - box_w) * 0.5)
+  local box_y = safe.y - 2
+
+  love.graphics.setColor(0.07, 0.1, 0.16, 0.95)
+  love.graphics.rectangle("fill", box_x, box_y, box_w, box_h, 8, 8)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  love.graphics.rectangle("line", box_x, box_y, box_w, box_h, 8, 8)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf(title, box_x, box_y + 5, box_w, "center")
+end
+
+function RuntimeInfluence:draw_help_tooltip(layout)
+  if not self.ctx.influence_ui.show_help_tooltip then
+    return
+  end
+
+  local safe = self.ctx:get_safe_rect()
+  local help_button = self:get_help_button(layout)
+  local panel_w = math.min(660, math.floor(safe.w * 0.56))
+  local panel_h = 112
+  local panel_x = layout.cards_rect.x + 12
+  local panel_y = help_button.y - panel_h - 8
+  if panel_y < safe.y + 34 then
+    panel_y = safe.y + 34
+  end
+
+  love.graphics.setColor(0.04, 0.06, 0.1, 0.98)
+  love.graphics.rectangle("fill", panel_x, panel_y, panel_w, panel_h, 10, 10)
+  love.graphics.setColor(0.72, 0.82, 0.96, 1)
+  love.graphics.rectangle("line", panel_x, panel_y, panel_w, panel_h, 10, 10)
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.printf("Influence Map Help", panel_x + 12, panel_y + 10, panel_w - 24, "left")
+  love.graphics.setColor(0.86, 0.92, 0.98, 1)
+  love.graphics.printf(
+    "Click primitive to focus. Arrows show coupling for the selected reference mode; blue marker shows card push.",
+    panel_x + 12,
+    panel_y + 30,
+    panel_w - 24,
+    "left"
+  )
+  love.graphics.printf(
+    "M mapping | C clear card | I flow | Z current | X do nothing | P selected card | V gameplay",
+    panel_x + 12,
+    panel_y + 66,
+    panel_w - 24,
+    "left"
+  )
+end
+
 function RuntimeInfluence:draw_influence_screen()
   local safe = self.ctx:get_safe_rect()
-  local heading_x = safe.x
-  local heading_y = safe.y - 8
   local layout = self:get_influence_layout()
   local forecast_ctx = self.ctx:get_forecast_context()
 
   Background.draw_fill()
   Background.draw_stars()
+  self:draw_screen_header(safe)
 
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("Core Influence Map (V)", heading_x, heading_y)
-  love.graphics.print("Click primitive to focus. Arrows show coupling for the selected reference mode; blue marker shows card push.", heading_x, heading_y + 20)
-  love.graphics.print("Use Explain Graph, Explain Next Turn, and Explain Objectives for detailed breakdowns.", heading_x, heading_y + 40)
-  love.graphics.print("M mapping, C clear card, I flow, Z current, X do nothing, P selected card, V gameplay.", heading_x, heading_y + 60)
-
+  self:draw_incoming_hazard_panel(layout)
   self:draw_influence_nodes(layout, forecast_ctx)
   self:draw_end_objectives_panel(layout, forecast_ctx)
   if self.ctx.influence_ui.show_graph_explain then
@@ -485,6 +661,7 @@ function RuntimeInfluence:draw_influence_screen()
     self:draw_forecast_panel(layout.turn_explain_rect, forecast_ctx)
   end
   self:draw_influence_cards(layout)
+  self:draw_help_tooltip(layout)
 
   if self.ctx.campaign_state ~= "playing" then
     self:draw_status_overlay()
@@ -547,6 +724,8 @@ function RuntimeInfluence:update(_dt)
 
   local explain_button = self:get_preview_explain_button(layout)
   self.ctx.influence_ui.hovered_turn_explain_button = self.ctx:point_in_rect(mx, my, explain_button.x, explain_button.y, explain_button.w, explain_button.h)
+  local help_button = self:get_help_button(layout)
+  self.ctx.influence_ui.hovered_help_button = self.ctx:point_in_rect(mx, my, help_button.x, help_button.y, help_button.w, help_button.h)
 
   local objectives_explain_button = self:get_objectives_explain_button(layout)
   self.ctx.influence_ui.hovered_objectives_explain_button = self.ctx:point_in_rect(
@@ -689,6 +868,12 @@ function RuntimeInfluence:mousepressed(x, y, button)
   end
 
   local explain_button = self:get_preview_explain_button(layout)
+  local help_button = self:get_help_button(layout)
+  if self.ctx:point_in_rect(mapped_x, mapped_y, help_button.x, help_button.y, help_button.w, help_button.h) then
+    self.ctx.influence_ui:toggle_help_tooltip()
+    return
+  end
+
   if self.ctx:point_in_rect(mapped_x, mapped_y, explain_button.x, explain_button.y, explain_button.w, explain_button.h) then
     self.ctx.influence_ui:toggle_turn_explain()
     return

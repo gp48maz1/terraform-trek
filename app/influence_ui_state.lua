@@ -23,6 +23,7 @@ function InfluenceUIState:reset_hover_state()
   self.hovered_graph_explain_button = false
   self.hovered_turn_explain_button = false
   self.hovered_objectives_explain_button = false
+  self.hovered_help_button = false
 end
 
 function InfluenceUIState:reset_for_new_campaign()
@@ -33,6 +34,7 @@ function InfluenceUIState:reset_for_new_campaign()
   self.show_graph_explain = false
   self.show_turn_explain = false
   self.show_objectives_explain = false
+  self.show_help_tooltip = false
   self:reset_hover_state()
 end
 
@@ -119,6 +121,10 @@ end
 
 function InfluenceUIState:toggle_objectives_explain()
   self.show_objectives_explain = not self.show_objectives_explain
+end
+
+function InfluenceUIState:toggle_help_tooltip()
+  self.show_help_tooltip = not self.show_help_tooltip
 end
 
 return InfluenceUIState
