@@ -232,7 +232,7 @@ function RuntimeInfluence:draw_magnetosphere_field(layout)
   local left_bound = layout.nodes.air.x - layout.nodes.air.r
   local right_bound = layout.nodes.water.x + layout.nodes.water.r
   local vertical_span = math.max(120, (layout.nodes.soil.y - layout.nodes.heat.y) + (layout.nodes.heat.r * 2))
-  local graph_right = graph_rect.x + graph_rect.w - 10
+  local graph_right = graph_rect.x + graph_rect.w - 14
 
   local line_width = love.graphics.getLineWidth()
 
@@ -241,20 +241,20 @@ function RuntimeInfluence:draw_magnetosphere_field(layout)
   -- 4-shell simplified magnetosphere: compressed left side, pitched right tail.
   for i = 1, 4 do
     local t = (i - 1) / 3
-    local alpha = (0.03 + strength * 0.05) * (1.0 - t * 0.2)
-    local left_rx = 24 + i * 8
-    local left_ry = vertical_span * 0.44 + i * 8
-    local left_cx = (left_bound - 12) - left_rx
+    local alpha = (0.028 + strength * 0.045) * (1.0 - t * 0.2)
+    local left_rx = 20 + i * 6
+    local left_ry = vertical_span * 0.40 + i * 6
+    local left_cx = (left_bound - 10) - left_rx
 
-    local right_cx = right_bound + 6 + i * 3
-    local right_target_rx = 72 + i * 14 + strength * 10
+    local right_cx = right_bound + 3 + i * 2
+    local right_target_rx = 52 + i * 11 + strength * 8
     local right_rx = math.max(22, math.min(right_target_rx, graph_right - right_cx))
-    local right_ry = vertical_span * 0.34 + i * 7
+    local right_ry = vertical_span * 0.30 + i * 6
 
     love.graphics.setColor(0.36, 0.67, 1.0, alpha)
     love.graphics.setLineWidth(math.max(1, 1.7 - t * 0.45))
     draw_arc_polyline(left_cx, cy, left_rx, left_ry, math.rad(112), math.rad(248), 24)
-    draw_arc_polyline(right_cx, cy, right_rx, right_ry, math.rad(-54), math.rad(54), 28)
+    draw_arc_polyline(right_cx, cy, right_rx, right_ry, math.rad(-48), math.rad(48), 28)
   end
 
   love.graphics.setScissor()

@@ -13,8 +13,8 @@ end
 function InfluenceLayout.compute(safe_rect)
   local safe = safe_rect
   local panel_gap = 14
-  local top_y = safe.y + 50
-  local cards_h = clamp_value(math.floor(safe.h * 0.24), 170, 196)
+  local top_y = safe.y + 44
+  local cards_h = clamp_value(math.floor(safe.h * 0.20), 150, 170)
   local cards_y = safe.y + safe.h - cards_h
   local top_h = cards_y - top_y - 12
 
@@ -41,7 +41,7 @@ function InfluenceLayout.compute(safe_rect)
     h = top_h
   }
 
-  local map_header_h = 132
+  local map_header_h = 118
   local map_footer_h = 44
   local map_graph_rect = {
     x = map_rect.x + 14,
@@ -53,8 +53,8 @@ function InfluenceLayout.compute(safe_rect)
   local map_center_x = map_graph_rect.x + math.floor(map_graph_rect.w * 0.5)
   local map_center_y = map_graph_rect.y + math.floor(map_graph_rect.h * 0.52)
   local offset_x = math.floor(map_graph_rect.w * 0.29)
-  local offset_y = math.floor(map_graph_rect.h * 0.24)
-  local node_radius = math.max(48, math.floor(math.min(map_graph_rect.w, map_graph_rect.h) * 0.125))
+  local offset_y = math.floor(map_graph_rect.h * 0.29)
+  local node_radius = math.max(50, math.floor(math.min(map_graph_rect.w, map_graph_rect.h) * 0.13))
   local nodes = {
     heat = { x = map_center_x, y = map_center_y - offset_y, r = node_radius },
     water = { x = map_center_x + offset_x, y = map_center_y, r = node_radius },

@@ -31,10 +31,10 @@ local function run_compute_contract()
   add_log(result, "WHEN computing influence layout panels and nodes")
 
   expect_equal(result, "hazard x anchors to safe left", layout.hazard_rect.x, safe.x)
-  expect_equal(result, "hazard y offset", layout.hazard_rect.y, safe.y + 50)
+  expect_equal(result, "hazard y offset", layout.hazard_rect.y, safe.y + 44)
   expect_equal(result, "hazard width ratio floor", layout.hazard_rect.w, math.max(220, math.floor(safe.w * 0.18)))
 
-  local expected_cards_h = math.max(170, math.min(196, math.floor(safe.h * 0.24)))
+  local expected_cards_h = math.max(150, math.min(170, math.floor(safe.h * 0.20)))
   expect_equal(result, "cards fixed compact height", layout.cards_rect.h, expected_cards_h)
   expect_equal(result, "cards pinned to safe bottom", layout.cards_rect.y, safe.y + safe.h - expected_cards_h)
 
@@ -44,7 +44,7 @@ local function run_compute_contract()
 
   local expected_map_x = layout.hazard_rect.x + layout.hazard_rect.w + 14
   expect_equal(result, "map x follows hazard + gap", layout.map_rect.x, expected_map_x)
-  expect_equal(result, "map y offset", layout.map_rect.y, safe.y + 50)
+  expect_equal(result, "map y offset", layout.map_rect.y, safe.y + 44)
   expect_equal(result, "map width uses remainder split", layout.map_rect.w, safe.w - layout.hazard_rect.w - layout.objectives_rect.w - 28)
 
   local right_x = layout.map_rect.x + layout.map_rect.w + 14
@@ -53,9 +53,9 @@ local function run_compute_contract()
   expect_equal(result, "cards span full safe width", layout.cards_rect.w, safe.w)
 
   expect_equal(result, "graph rect is inset inside map panel", layout.map_graph_rect.x, layout.map_rect.x + 14)
-  expect_equal(result, "graph rect y offset", layout.map_graph_rect.y, layout.map_rect.y + 132)
+  expect_equal(result, "graph rect y offset", layout.map_graph_rect.y, layout.map_rect.y + 118)
   expect_equal(result, "graph rect width inset", layout.map_graph_rect.w, layout.map_rect.w - 28)
-  expect_equal(result, "graph rect height reserves footer", layout.map_graph_rect.h, layout.map_rect.h - 176)
+  expect_equal(result, "graph rect height reserves footer", layout.map_graph_rect.h, layout.map_rect.h - 162)
 
   expect_equal(result, "hazard card width cap", layout.hazard_card_rect.w, math.min(layout.hazard_rect.w - 20, 236))
   local expected_hazard_card_h = math.max(190, math.min(layout.hazard_rect.h - 62, 266))
