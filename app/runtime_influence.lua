@@ -218,49 +218,63 @@ end
 function RuntimeInfluence:draw_magnetosphere_field(layout)
   local magnetosphere = layout.magnetosphere
   local graph_rect = layout.map_graph_rect
-  if not magnetosphere or not graph_rect then
+  if not magnetosphere or not graph_rect or not layout.nodes then
     return
   end
 
   local mag_level = self.ctx.terraforming_state:get_magnetosphere_level()
   local strength = self.ctx:clamp_value((mag_level - 1) / 3, 0, 1)
-  local cx = magnetosphere.x
   local cy = magnetosphere.y
-  local base_r = magnetosphere.base_r
+  local left_bound = layout.nodes.air.x - layout.nodes.air.r
+  local right_bound = layout.nodes.water.x + layout.nodes.water.r
+  local top_bound = layout.nodes.heat.y - layout.nodes.heat.r
+  local bottom_bound = layout.nodes.soil.y + layout.nodes.soil.r
+  local cluster_h = math.max(120, bottom_bound - top_bound)
+  local graph_right = graph_rect.x + graph_rect.w - 12
 
   local line_width = love.graphics.getLineWidth()
 
   love.graphics.setScissor(graph_rect.x + 2, graph_rect.y + 2, graph_rect.w - 4, graph_rect.h - 4)
 
+  -- Dayside (left): compressed bow lines kept outside the air node.
   for i = 1, 5 do
     local t = (i - 1) / 4
-    local alpha = (0.03 + strength * 0.05) * (1.0 - t * 0.18)
-    local shell = base_r + (i - 1) * 14
-    local rx = shell * 0.82
-    local ry = shell * 0.96
+    local alpha = (0.022 + strength * 0.04) * (1.0 - t * 0.18)
+    local rx = 22 + i * 9
+    local ry = cluster_h * 0.52 + i * 10
+    local cx = left_bound - (44 + i * 7)
+    if cx + rx > left_bound - 8 then
+      cx = (left_bound - 8) - rx
+    end
     love.graphics.setColor(0.36, 0.67, 1.0, alpha)
     love.graphics.setLineWidth(math.max(1, 1.6 - t * 0.4))
     draw_arc_polyline(cx, cy, rx, ry, math.rad(112), math.rad(248), 26)
   end
 
+  -- Nightside (right): stretched tail lines, capped to graph bounds.
   for i = 1, 5 do
     local t = (i - 1) / 4
-    local alpha = (0.032 + strength * 0.05) * (1.0 - t * 0.16)
-    local shell = base_r + i * 18
-    local rx = shell * (1.16 + strength * 0.18)
-    local ry = shell * 0.74
-    local tail_cx = cx + base_r * 0.28 + i * 5
+    local alpha = (0.03 + strength * 0.045) * (1.0 - t * 0.16)
+    local tail_cx = right_bound + 8 + i * 2
+    local target_rx = 64 + i * 14 + strength * 14
+    local max_rx = math.max(20, graph_right - tail_cx)
+    local rx = math.min(target_rx, max_rx)
+    local ry = cluster_h * 0.44 + i * 8
     love.graphics.setColor(0.35, 0.62, 0.98, alpha)
     love.graphics.setLineWidth(math.max(1, 1.6 - t * 0.4))
     draw_arc_polyline(tail_cx, cy, rx, ry, math.rad(-58), math.rad(58), 30)
   end
 
+  -- Bow shock accent in front of the compressed side.
   local warm_alpha = 0.02 + (1.0 - strength) * 0.055
-  for i = 1, 3 do
+  for i = 1, 2 do
     local fade = 1 - (i - 1) * 0.22
-    local shock_cx = cx - base_r * 0.86
-    local rx = base_r * 0.58 + i * 14
-    local ry = base_r * 0.98 + i * 20
+    local rx = 44 + i * 14
+    local ry = cluster_h * 0.66 + i * 16
+    local shock_cx = left_bound - (78 + i * 14)
+    if shock_cx + rx > left_bound - 20 then
+      shock_cx = (left_bound - 20) - rx
+    end
     love.graphics.setColor(0.96, 0.55, 0.25, warm_alpha * fade)
     love.graphics.setLineWidth(1.2)
     draw_arc_polyline(shock_cx, cy, rx, ry, math.rad(106), math.rad(254), 24)
